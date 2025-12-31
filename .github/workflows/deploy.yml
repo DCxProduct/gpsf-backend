@@ -33,7 +33,7 @@ jobs:
 
       - name: Build NestJS app
         run: |
-          cd /home/gpsf-backend
+          cd /home/ubuntu/gpsf-backend
           npm run build
 
       - name: Restart PM2 app
