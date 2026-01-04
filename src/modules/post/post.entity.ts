@@ -29,8 +29,8 @@ export class PostEntity {
     @Column({unique: true, length: 240, nullable: true})
     slug: string;
 
-    @Column({type: 'text', nullable: true, default: ''})
-    content?: string;
+    @Column({type: 'jsonb', nullable: true})
+    content?: Record<string, unknown> | null;
 
     @Column({type: 'enum', enum: PostStatus, default: PostStatus.Draft})
     status: PostStatus;
