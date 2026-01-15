@@ -4,15 +4,15 @@ import { Repository } from 'typeorm';
 import { SiteSettingEntity } from '@/modules/site-setting/site-setting.entity';
 import { CreateSiteSettingDto } from '@/modules/site-setting/dto/create-site-setting.dto';
 import { UpdateSiteSettingDto } from '@/modules/site-setting/dto/update-site-setting.dto';
-import { R2Service } from '@/modules/site-setting/r2.service';
 import { UploadedFilePayload } from '@/types/uploaded-file.type';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class SiteSettingService {
   constructor(
     @InjectRepository(SiteSettingEntity)
     private readonly siteSettingRepository: Repository<SiteSettingEntity>,
-    private readonly r2: R2Service,
   ) {}
 
   async create(dto: CreateSiteSettingDto, file?: UploadedFilePayload | null): Promise<SiteSettingEntity> {
@@ -55,7 +55,13 @@ export class SiteSettingService {
 
   private async uploadLogo(file: UploadedFilePayload): Promise<string> {
     const key = this.generateObjectKey(file.originalname);
-    return await this.r2.uploadObject({ key, body: file.buffer, contentType: file.mimetype });
+    const filePath = path.join(process.cwd(), key);
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, file.buffer);
+    return `/${key}`;
   }
 
   private generateObjectKey(originalName: string): string {
