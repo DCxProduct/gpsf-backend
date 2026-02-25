@@ -47,6 +47,7 @@ export type ContactPanelResponse = {
     title: string;
     links: ContactSocialLink[];
   };
+  // Kept for backward API compatibility. New entity does not store map url.
   mapEmbedUrl: string | null;
   updatedAt: Date;
 };
@@ -69,8 +70,6 @@ export class SiteSettingService {
     } else if (dto.logo !== undefined) {
       siteSetting.logo = this.normalizeText(dto.logo);
     }
-
-    this.syncLegacyFields(siteSetting);
 
     try {
       return await this.siteSettingRepository.save(siteSetting);
@@ -116,7 +115,7 @@ export class SiteSettingService {
     file?: UploadedFilePayload | null,
   ): Promise<SiteSettingEntity> {
     const siteSetting = await this.findOne(id);
-    const previousLogo = siteSetting.logo ?? siteSetting.siteLogo ?? null;
+    const previousLogo = siteSetting.logo ?? null;
     this.applyDto(siteSetting, dto, false);
 
     let uploadedLogo: string | null = null;
@@ -127,11 +126,9 @@ export class SiteSettingService {
       siteSetting.logo = this.normalizeText(dto.logo);
     }
 
-    this.syncLegacyFields(siteSetting);
-
     try {
       const saved = await this.siteSettingRepository.save(siteSetting);
-      const nextLogo = saved.logo ?? saved.siteLogo ?? null;
+      const nextLogo = saved.logo ?? null;
       if (previousLogo && previousLogo !== nextLogo) {
         this.removeLocalFile(previousLogo);
       }
@@ -154,7 +151,7 @@ export class SiteSettingService {
 
   async remove(id: number): Promise<void> {
     const siteSetting = await this.findOne(id);
-    const oldLogo = siteSetting.logo ?? siteSetting.siteLogo ?? null;
+    const oldLogo = siteSetting.logo ?? null;
     await this.siteSettingRepository.remove(siteSetting);
     if (oldLogo) {
       this.removeLocalFile(oldLogo);
@@ -197,59 +194,15 @@ export class SiteSettingService {
     }
   }
 
-  private syncLegacyFields(siteSetting: SiteSettingEntity): void {
-    const primaryTitle = this.pickLocalized(siteSetting.title) ?? this.normalizeText(siteSetting.siteName);
-    if (!primaryTitle) {
-      throw new BadRequestException('title.en or title.km is required');
-    }
-
-    siteSetting.siteName = primaryTitle;
-    siteSetting.siteDescription = this.pickLocalized(siteSetting.description);
-    siteSetting.siteLogo = siteSetting.logo ?? null;
-    siteSetting.contactAddress = this.pickLocalized(siteSetting.address);
-    siteSetting.contactOpenTime = this.pickLocalized(siteSetting.openTime);
+  private toContactPanel(siteSetting: SiteSettingEntity): ContactPanelResponse {
+    const addressValue = this.pickLocalized(siteSetting.address);
+    const openTimeRaw = this.pickLocalized(siteSetting.openTime);
+    const openTimeLines = this.splitLines(openTimeRaw);
 
     const preferredContact = siteSetting.contact?.en ?? siteSetting.contact?.km ?? null;
     const phones = this.uniqueStrings(preferredContact?.phones ?? []);
-    siteSetting.contactPhonePrimary = phones[0] ?? null;
-    siteSetting.contactPhoneSecondary = phones[1] ?? null;
-    siteSetting.sitePhone = phones[0] ?? null;
-
-    const deskEmailMap = this.toDeskEmailMap(preferredContact?.desks ?? []);
-    const generalEmails = deskEmailMap.get('general') ?? [];
-    siteSetting.contactEmailGeneral = generalEmails[0] ?? null;
-    siteSetting.contactEmailInfo = generalEmails[1] ?? null;
-    siteSetting.contactEmailChinaDesk = (deskEmailMap.get('chinadesk') ?? [])[0] ?? null;
-    siteSetting.contactEmailEuDesk = (deskEmailMap.get('eudesk') ?? [])[0] ?? null;
-    siteSetting.contactEmailJapanDesk = (deskEmailMap.get('japandesk') ?? [])[0] ?? null;
-    siteSetting.contactEmailKoreaDesk = (deskEmailMap.get('koreadesk') ?? [])[0] ?? null;
-
-    const socialMap = this.toSocialLinkMap(siteSetting.socialLinks ?? []);
-    siteSetting.socialFacebookUrl = socialMap.get('facebook') ?? null;
-    siteSetting.socialTelegramUrl = socialMap.get('telegram') ?? null;
-    siteSetting.socialYoutubeUrl = socialMap.get('youtube') ?? null;
-    siteSetting.socialLinkedinUrl = socialMap.get('linkedin') ?? null;
-  }
-
-  private toContactPanel(siteSetting: SiteSettingEntity): ContactPanelResponse {
-    const addressValue = this.pickLocalized(siteSetting.address) ?? this.normalizeText(siteSetting.contactAddress);
-    const openTimeRaw = this.pickLocalized(siteSetting.openTime) ?? this.normalizeText(siteSetting.contactOpenTime);
-    const openTimeLines = this.splitLines(openTimeRaw);
-
-    const preferredContact =
-      siteSetting.contact?.en ??
-      siteSetting.contact?.km ??
-      this.buildLegacyContact(siteSetting);
-
-    const phones = this.uniqueStrings([
-      ...(preferredContact?.phones ?? []),
-      siteSetting.contactPhonePrimary,
-      siteSetting.contactPhoneSecondary,
-      siteSetting.sitePhone,
-    ]);
-
-    const desks = this.buildPanelDesks(preferredContact?.desks ?? [], siteSetting);
-    const links = this.normalizeSocialLinks(siteSetting.socialLinks) ?? this.buildLegacySocialLinks(siteSetting);
+    const desks = this.buildPanelDesks(preferredContact?.desks ?? []);
+    const links = this.normalizeSocialLinks(siteSetting.socialLinks) ?? [];
 
     return {
       address: {
@@ -271,93 +224,27 @@ export class SiteSettingService {
         title: 'Stay Connected',
         links,
       },
-      mapEmbedUrl: this.normalizeText(siteSetting.contactMapEmbedUrl),
+      mapEmbedUrl: null,
       updatedAt: siteSetting.updatedAt,
     };
   }
 
-  private buildPanelDesks(
-    desks: SiteContactDeskValue[],
-    siteSetting: SiteSettingEntity,
-  ): ContactPanelDesk[] {
-    const normalizedDesks = desks
-      .map((desk, index) => ({
-        key: this.toDeskKey(desk.title) || `desk${index + 1}`,
-        label: this.normalizeText(desk.title) ?? `Desk ${index + 1}`,
-        emails: this.uniqueStrings(desk.emails ?? []),
-      }))
-      .filter((desk) => desk.emails.length > 0);
+  private buildPanelDesks(desks: SiteContactDeskValue[]): ContactPanelDesk[] {
+    return desks
+      .map((desk, index) => {
+        const label = this.normalizeText(desk?.title) ?? `Desk ${index + 1}`;
+        const emails = this.uniqueStrings(desk?.emails ?? []);
+        if (!emails.length) {
+          return null;
+        }
 
-    if (normalizedDesks.length > 0) {
-      return normalizedDesks;
-    }
-
-    return this.buildLegacyPanelDesks(siteSetting);
-  }
-
-  private buildLegacyContact(siteSetting: SiteSettingEntity): SiteContactLanguageValue {
-    const phones = this.uniqueStrings([
-      siteSetting.contactPhonePrimary,
-      siteSetting.contactPhoneSecondary,
-      siteSetting.sitePhone,
-    ]);
-
-    const desks = this.buildLegacyPanelDesks(siteSetting).map((item) => ({
-      title: item.label,
-      emails: item.emails,
-    }));
-
-    return { phones, desks };
-  }
-
-  private buildLegacyPanelDesks(siteSetting: SiteSettingEntity): ContactPanelDesk[] {
-    const blocks: ContactPanelDesk[] = [
-      {
-        key: 'general',
-        label: 'General',
-        emails: this.uniqueStrings([siteSetting.contactEmailGeneral, siteSetting.contactEmailInfo]),
-      },
-      {
-        key: 'chinadesk',
-        label: 'China Desk',
-        emails: this.uniqueStrings([siteSetting.contactEmailChinaDesk]),
-      },
-      {
-        key: 'eudesk',
-        label: 'EU Desk',
-        emails: this.uniqueStrings([siteSetting.contactEmailEuDesk]),
-      },
-      {
-        key: 'japandesk',
-        label: 'Japan Desk',
-        emails: this.uniqueStrings([siteSetting.contactEmailJapanDesk]),
-      },
-      {
-        key: 'koreadesk',
-        label: 'Korea Desk',
-        emails: this.uniqueStrings([siteSetting.contactEmailKoreaDesk]),
-      },
-    ];
-
-    return blocks.filter((item) => item.emails.length > 0);
-  }
-
-  private buildLegacySocialLinks(siteSetting: SiteSettingEntity): SiteSocialLinkValue[] {
-    const links: SiteSocialLinkValue[] = [];
-
-    const maybePush = (icon: string, title: string, url?: string | null) => {
-      const normalized = this.normalizeText(url);
-      if (normalized) {
-        links.push({ icon, title, url: normalized });
-      }
-    };
-
-    maybePush('facebook', 'Facebook', siteSetting.socialFacebookUrl);
-    maybePush('telegram', 'Telegram', siteSetting.socialTelegramUrl);
-    maybePush('youtube', 'YouTube', siteSetting.socialYoutubeUrl);
-    maybePush('linkedin', 'LinkedIn', siteSetting.socialLinkedinUrl);
-
-    return links;
+        return {
+          key: this.toDeskKey(label) || `desk${index + 1}`,
+          label,
+          emails,
+        };
+      })
+      .filter((desk): desk is ContactPanelDesk => Boolean(desk));
   }
 
   private normalizeLocalizedText(
@@ -440,40 +327,12 @@ export class SiteSettingService {
     return normalized.length ? normalized : null;
   }
 
-  private toDeskEmailMap(desks: SiteContactDeskValue[]): Map<string, string[]> {
-    const map = new Map<string, string[]>();
-    for (const desk of desks) {
-      const key = this.toDeskKey(desk.title);
-      if (!key) {
-        continue;
-      }
-      const emails = this.uniqueStrings(desk.emails ?? []);
-      if (emails.length) {
-        map.set(key, emails);
-      }
-    }
-    return map;
-  }
-
   private toDeskKey(value?: string | null): string {
     const normalized = this.normalizeText(value);
     if (!normalized) {
       return '';
     }
     return normalized.toLowerCase().replace(/[^a-z]/g, '');
-  }
-
-  private toSocialLinkMap(links: SiteSocialLinkValue[]): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const link of links) {
-      const icon = this.normalizeText(link.icon)?.toLowerCase();
-      const url = this.normalizeText(link.url);
-      if (!icon || !url) {
-        continue;
-      }
-      map.set(icon, url);
-    }
-    return map;
   }
 
   private pickLocalized(value?: LocalizedTextValue | null): string | null {

@@ -169,19 +169,13 @@ export class SiteSettingController {
   private toSiteSettingResponse(siteSetting: SiteSettingEntity) {
     return {
       id: siteSetting.id,
-      title: siteSetting.title ?? { en: siteSetting.siteName },
-      description:
-        siteSetting.description ??
-        (siteSetting.siteDescription ? { en: siteSetting.siteDescription } : null),
-      logo: siteSetting.logo ?? siteSetting.siteLogo ?? null,
+      title: siteSetting.title ?? null,
+      description: siteSetting.description ?? null,
+      logo: siteSetting.logo ?? null,
       footerBackground: siteSetting.footerBackground ?? null,
-      address:
-        siteSetting.address ??
-        (siteSetting.contactAddress ? { en: siteSetting.contactAddress } : null),
+      address: siteSetting.address ?? null,
       contact: siteSetting.contact ?? null,
-      openTime:
-        siteSetting.openTime ??
-        (siteSetting.contactOpenTime ? { en: siteSetting.contactOpenTime } : null),
+      openTime: siteSetting.openTime ?? null,
       socialLinks: siteSetting.socialLinks ?? [],
       createdAt: siteSetting.createdAt,
       updatedAt: siteSetting.updatedAt,
