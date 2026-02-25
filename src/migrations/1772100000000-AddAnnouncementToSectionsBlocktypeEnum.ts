@@ -29,15 +29,15 @@ export class AddAnnouncementToSectionsBlocktypeEnum1772100000000 implements Migr
         await queryRunner.query(`
             UPDATE "sections"
             SET "blockType" = 'announcement'::"public"."sections_blocktype_enum"
-            WHERE "blockType" = 'anountment';
+            WHERE "blockType"::text = 'anountment';
         `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
             UPDATE "sections"
-            SET "blockType" = 'text_block'
-            WHERE "blockType" IN ('announcement', 'anountment');
+            SET "blockType" = 'text_block'::"public"."sections_blocktype_enum"
+            WHERE "blockType"::text IN ('announcement', 'anountment');
         `);
 
         await queryRunner.query(`ALTER TYPE "public"."sections_blocktype_enum" RENAME TO "sections_blocktype_enum_old";`);
