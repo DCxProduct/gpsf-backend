@@ -7,7 +7,14 @@ export class AddMoreFieldInPageEntity1769073230895 implements MigrationInterface
         await queryRunner.query(`ALTER TABLE "categories" DROP CONSTRAINT "FK_categories_createdBy_users"`);
         await queryRunner.query(`ALTER TABLE "post_images" DROP CONSTRAINT "FK_post_images_posts"`);
         await queryRunner.query(`ALTER TABLE "posts" DROP CONSTRAINT "FK_posts_author_users"`);
-        await queryRunner.query(`ALTER TABLE "articles" DROP CONSTRAINT "FK_articles_author_setnull"`);
+        await queryRunner.query(`
+          DO $$
+          BEGIN
+            IF to_regclass('public.articles') IS NOT NULL THEN
+              ALTER TABLE "articles" DROP CONSTRAINT IF EXISTS "FK_articles_author_setnull";
+            END IF;
+          END $$;
+        `);
         await queryRunner.query(`ALTER TABLE "role_permissions" DROP CONSTRAINT "FK_role_permissions_role_id_roles_int"`);
         await queryRunner.query(`DROP INDEX "public"."IDX_menu_items_menuId"`);
         await queryRunner.query(`DROP INDEX "public"."IDX_menu_items_parentId"`);
@@ -31,13 +38,32 @@ export class AddMoreFieldInPageEntity1769073230895 implements MigrationInterface
         await queryRunner.query(`UPDATE "pages" SET "metaDescription" = CASE WHEN "metaDescription_text" IS NULL THEN NULL ELSE jsonb_build_object('en', "metaDescription_text") END`);
         await queryRunner.query(`ALTER TABLE "pages" DROP COLUMN "metaDescription_text"`);
         await queryRunner.query(`ALTER TABLE "role_permissions" ADD CONSTRAINT "UQ_77b4b60c0b4fd370107a911f637" UNIQUE ("role_id", "resource")`);
-        await queryRunner.query(`ALTER TABLE "articles" ADD CONSTRAINT "FK_65d9ccc1b02f4d904e90bd76a34" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`
+          DO $$
+          BEGIN
+            IF to_regclass('public.articles') IS NOT NULL THEN
+              ALTER TABLE "articles"
+              ADD CONSTRAINT "FK_65d9ccc1b02f4d904e90bd76a34"
+              FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+            END IF;
+          EXCEPTION
+            WHEN duplicate_object THEN
+              NULL;
+          END $$;
+        `);
         await queryRunner.query(`ALTER TABLE "role_permissions" ADD CONSTRAINT "FK_178199805b901ccd220ab7740ec" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`ALTER TABLE "role_permissions" DROP CONSTRAINT "FK_178199805b901ccd220ab7740ec"`);
-        await queryRunner.query(`ALTER TABLE "articles" DROP CONSTRAINT "FK_65d9ccc1b02f4d904e90bd76a34"`);
+        await queryRunner.query(`
+          DO $$
+          BEGIN
+            IF to_regclass('public.articles') IS NOT NULL THEN
+              ALTER TABLE "articles" DROP CONSTRAINT IF EXISTS "FK_65d9ccc1b02f4d904e90bd76a34";
+            END IF;
+          END $$;
+        `);
         await queryRunner.query(`ALTER TABLE "role_permissions" DROP CONSTRAINT "UQ_77b4b60c0b4fd370107a911f637"`);
         await queryRunner.query(`ALTER TABLE "pages" DROP COLUMN "metaDescription"`);
         await queryRunner.query(`ALTER TABLE "pages" ADD "metaDescription" character varying(500)`);
@@ -54,7 +80,19 @@ export class AddMoreFieldInPageEntity1769073230895 implements MigrationInterface
         await queryRunner.query(`CREATE INDEX "IDX_menu_items_parentId" ON "menu_items" ("parentId") `);
         await queryRunner.query(`CREATE INDEX "IDX_menu_items_menuId" ON "menu_items" ("menuId") `);
         await queryRunner.query(`ALTER TABLE "role_permissions" ADD CONSTRAINT "FK_role_permissions_role_id_roles_int" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "articles" ADD CONSTRAINT "FK_articles_author_setnull" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`
+          DO $$
+          BEGIN
+            IF to_regclass('public.articles') IS NOT NULL THEN
+              ALTER TABLE "articles"
+              ADD CONSTRAINT "FK_articles_author_setnull"
+              FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+            END IF;
+          EXCEPTION
+            WHEN duplicate_object THEN
+              NULL;
+          END $$;
+        `);
         await queryRunner.query(`ALTER TABLE "posts" ADD CONSTRAINT "FK_posts_author_users" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "post_images" ADD CONSTRAINT "FK_post_images_posts" FOREIGN KEY ("postId") REFERENCES "posts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "categories" ADD CONSTRAINT "FK_categories_createdBy_users" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
