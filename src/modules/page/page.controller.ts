@@ -61,9 +61,9 @@ export class PageController {
     };
   }
 
-  @Get(':slug')
+  @Get(':identifier')
   async findOne(
-    @Param('slug') slug: string,
+    @Param('identifier') identifier: string,
     @Query('includeDrafts') includeDrafts?: string,
     @Query('lang') lang?: string,
     @User() user?: UserEntity,
@@ -75,7 +75,7 @@ export class PageController {
     // - Admin/Editor (default, unless includeDrafts=false), or
     // - Client explicitly asks via includeDrafts=true (useful for previews)
     const canViewDrafts = (isPrivileged && (includeDrafts === undefined || wantsDrafts)) || (!isPrivileged && wantsDrafts);
-    const p = await this.pageService.findBySlug(slug, canViewDrafts);
+    const p = await this.pageService.findByIdentifier(identifier, canViewDrafts);
     return {
       id: p.id,
       title: this.pickLocalized(p.title, resolvedLang),
@@ -92,9 +92,9 @@ export class PageController {
     };
   }
 
-  @Get(':slug/section')
+  @Get(':identifier/section')
   async getSections(
-    @Param('slug') slug: string,
+    @Param('identifier') identifier: string,
     @Query('includeDrafts') includeDrafts?: string,
     @Query('includePosts') includePosts?: string,
     @User() user?: UserEntity,
@@ -105,7 +105,7 @@ export class PageController {
     const wantsPosts =
       includePosts === undefined || ['true','1','yes','y'].includes(String(includePosts).toLowerCase());
 
-    return this.sectionService.getSectionsForPage(slug, canViewDrafts, wantsPosts);
+    return this.sectionService.getSectionsForPage(identifier, canViewDrafts, wantsPosts);
   }
 
   @Post()
@@ -116,12 +116,12 @@ export class PageController {
     return this.pageService.create(user, dto);
   }
 
-  @Put(':slug')
+  @Put(':identifier')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Pages, actions: [Action.Update] })
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-  update(@Param('slug') slug: string, @Body() dto: UpdatePageDto) {
-    return this.pageService.update(slug, dto);
+  update(@Param('identifier') identifier: string, @Body() dto: UpdatePageDto) {
+    return this.pageService.update(identifier, dto);
   }
 
   @Delete(':slug')

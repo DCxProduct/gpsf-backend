@@ -19,12 +19,12 @@ export class SectionService {
         private readonly pageService: PageService,
     ) {}
 
-    async getSectionsForPage(slug: string, includeDrafts = false, includePosts = false): Promise<SectionResponse> {
-        const safeSlug = slug?.trim();
-        if (!safeSlug) {
-            throw new HttpException("Page slug is required", HttpStatus.BAD_REQUEST);
+    async getSectionsForPage(pageIdentifier: string, includeDrafts = false, includePosts = false): Promise<SectionResponse> {
+        const safeIdentifier = pageIdentifier?.trim();
+        if (!safeIdentifier) {
+            throw new HttpException("Page identifier is required", HttpStatus.BAD_REQUEST);
         }
-        const page = await this.pageService.findBySlug(safeSlug, includeDrafts);
+        const page = await this.pageService.findByIdentifier(safeIdentifier, includeDrafts);
 
         const sections = await this.sectionRepository.find({
             where: { page: { id: page.id }, enabled: true },

@@ -57,34 +57,51 @@ export class PageService {
   }
 
   async findBySlug(slug: string, includeDrafts = false): Promise<PageEntity> {
-    // First, try to find by slug only (independent of status)
     const anyPage = await this.pageRepository.findOne({ where: { slug }, relations: ['author'] });
-    if (!anyPage) {
-      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
-    }
-    // If drafts are not allowed and the page is draft, hide it
-    if (!includeDrafts && anyPage.status !== PageStatus.Published) {
-      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
-    }
-    return anyPage;
+    return this.ensurePageVisible(anyPage, includeDrafts);
   }
 
   async findById(id: number, includeDrafts = false): Promise<PageEntity> {
     const anyPage = await this.pageRepository.findOne({ where: { id }, relations: ['author'] });
-    if (!anyPage) {
-      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
-    }
-    if (!includeDrafts && anyPage.status !== PageStatus.Published) {
-      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
-    }
-    return anyPage;
+    return this.ensurePageVisible(anyPage, includeDrafts);
   }
 
-  async update(slug: string, dto: UpdatePageDto): Promise<PageEntity> {
-    // Include drafts when updating; editors often update unpublished pages
-    const page = await this.findBySlug(slug, true);
+  async findByIdentifier(identifier: string, includeDrafts = false): Promise<PageEntity> {
+    const safeIdentifier = String(identifier ?? '').trim();
+    if (!safeIdentifier) {
+      throw new HttpException('Page identifier is required', HttpStatus.BAD_REQUEST);
+    }
 
-    // Do NOT auto-regenerate slug on title change to avoid breaking links
+    // Keep slug priority to avoid breaking pages that intentionally use numeric slugs.
+    const pageBySlug = await this.pageRepository.findOne({
+      where: { slug: safeIdentifier },
+      relations: ['author'],
+    });
+
+    if (pageBySlug) {
+      return this.ensurePageVisible(pageBySlug, includeDrafts);
+    }
+
+    if (/^\d+$/.test(safeIdentifier)) {
+      const id = Number(safeIdentifier);
+      if (Number.isSafeInteger(id) && id > 0) {
+        const pageById = await this.pageRepository.findOne({
+          where: { id },
+          relations: ['author'],
+        });
+
+        if (pageById) {
+          return this.ensurePageVisible(pageById, includeDrafts);
+        }
+      }
+    }
+
+    throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
+  }
+
+  async update(identifier: string, dto: UpdatePageDto): Promise<PageEntity> {
+    // Include drafts when updating; editors often update unpublished pages
+    const page = await this.findByIdentifier(identifier, true);
 
     if (dto.status && dto.status !== page.status) {
       if (dto.status === PageStatus.Published && !page.publishedAt) {
@@ -95,11 +112,32 @@ export class PageService {
       }
     }
 
+    const mergedTitle = dto.title ? { ...page.title, ...dto.title } : page.title;
+    if (!mergedTitle.en || !mergedTitle.en.trim()) {
+      throw new HttpException('Title en is required', HttpStatus.BAD_REQUEST);
+    }
+    const nextSlug = this.generateSlug(mergedTitle.en);
+    if (nextSlug !== page.slug) {
+      const existingPage = await this.pageRepository.findOne({ where: { slug: nextSlug } });
+      if (existingPage && existingPage.id !== page.id) {
+        throw new HttpException('Page slug already exists', HttpStatus.UNPROCESSABLE_ENTITY);
+      }
+      page.slug = nextSlug;
+    }
+
+    const mergedMetaTitle = dto.metaTitle
+      ? { ...(page.metaTitle ?? {}), ...dto.metaTitle }
+      : page.metaTitle;
+
+    const mergedMetaDescription = dto.metaDescription
+      ? { ...(page.metaDescription ?? {}), ...dto.metaDescription }
+      : page.metaDescription;
+
     Object.assign(page, {
-      title: dto.title ?? page.title,
+      title: mergedTitle,
       status: dto.status ?? page.status,
-      metaTitle: dto.metaTitle ?? page.metaTitle,
-      metaDescription: dto.metaDescription ?? page.metaDescription,
+      metaTitle: mergedMetaTitle,
+      metaDescription: mergedMetaDescription,
     });
 
     return await this.pageRepository.save(page);
@@ -115,5 +153,17 @@ export class PageService {
       throw new HttpException('Invalid title', HttpStatus.BAD_REQUEST);
     }
     return slugify(titleEn, { lower: true, strict: true, trim: true });
+  }
+
+  private ensurePageVisible(page: PageEntity | null, includeDrafts: boolean): PageEntity {
+    if (!page) {
+      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (!includeDrafts && page.status !== PageStatus.Published) {
+      throw new HttpException('Page not found', HttpStatus.NOT_FOUND);
+    }
+
+    return page;
   }
 }
