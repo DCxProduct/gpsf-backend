@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, forwardRef, Get, Inject, Param, Post, Put, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, forwardRef, Get, Inject, Param, ParseIntPipe, Post, Put, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { PageService } from '@/modules/page/page.service';
 import { CreatePageDto } from '@/modules/page/dto/create-page.dto';
 import { UpdatePageDto } from '@/modules/page/dto/update-page.dto';
@@ -124,11 +124,11 @@ export class PageController {
     return this.pageService.update(identifier, dto);
   }
 
-  @Delete(':slug')
+  @Delete(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Pages, actions: [Action.Delete] })
-  remove(@Param('slug') slug: string) {
-    return this.pageService.remove(slug);
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.pageService.remove(id);
   }
 
   private normalizeLang(lang?: string): 'en' | 'km' | undefined {

@@ -125,13 +125,17 @@ export class PageService {
       page.slug = nextSlug;
     }
 
-    const mergedMetaTitle = dto.metaTitle
-      ? { ...(page.metaTitle ?? {}), ...dto.metaTitle }
-      : page.metaTitle;
+    const mergedMetaTitle = dto.metaTitle === null
+      ? null
+      : dto.metaTitle
+        ? { ...(page.metaTitle ?? {}), ...dto.metaTitle }
+        : page.metaTitle;
 
-    const mergedMetaDescription = dto.metaDescription
-      ? { ...(page.metaDescription ?? {}), ...dto.metaDescription }
-      : page.metaDescription;
+    const mergedMetaDescription = dto.metaDescription === null
+      ? null
+      : dto.metaDescription
+        ? { ...(page.metaDescription ?? {}), ...dto.metaDescription }
+        : page.metaDescription;
 
     Object.assign(page, {
       title: mergedTitle,
@@ -143,8 +147,8 @@ export class PageService {
     return await this.pageRepository.save(page);
   }
 
-  async remove(slug: string): Promise<void> {
-    const page = await this.findBySlug(slug);
+  async remove(id: number): Promise<void> {
+    const page = await this.findById(id, true);
     await this.pageRepository.remove(page);
   }
 
