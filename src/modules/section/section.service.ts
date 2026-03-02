@@ -19,6 +19,14 @@ export class SectionService {
         private readonly pageService: PageService,
     ) {}
 
+    private readonly sectionTypesWithDirectPosts: SectionBlockType[] = [
+        SectionBlockType.HERO_BANNER,
+        SectionBlockType.TEXT_BLOCK,
+        SectionBlockType.STATS,
+        SectionBlockType.BENEFITS,
+        SectionBlockType.ANNOUNCEMENT,
+    ];
+
     async getSectionsForPage(pageIdentifier: string, includeDrafts = false, includePosts = false): Promise<SectionResponse> {
         const safeIdentifier = pageIdentifier?.trim();
         if (!safeIdentifier) {
@@ -69,9 +77,7 @@ export class SectionService {
                 ...new Set(
                     sections
                         .filter((section) =>
-                            [SectionBlockType.HERO_BANNER, SectionBlockType.STATS, SectionBlockType.BENEFITS].includes(
-                                section.blockType,
-                            ),
+                            this.sectionTypesWithDirectPosts.includes(section.blockType),
                         )
                         .map((section) => section.id),
                 ),
@@ -108,11 +114,7 @@ export class SectionService {
                 }
 
                 if (section.blockType !== SectionBlockType.POST_LIST) {
-                    if (
-                        [SectionBlockType.HERO_BANNER, SectionBlockType.STATS, SectionBlockType.BENEFITS].includes(
-                            section.blockType,
-                        )
-                    ) {
+                    if (this.sectionTypesWithDirectPosts.includes(section.blockType)) {
                         block.posts = postsBySectionId.get(section.id) ?? [];
                         return block;
                     }
