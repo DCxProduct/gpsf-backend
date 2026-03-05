@@ -30,6 +30,11 @@ export class SectionService {
         SectionBlockType.ANNOUNCEMENT,
     ];
 
+    private readonly sectionTypesWithCategoryPosts: SectionBlockType[] = [
+        SectionBlockType.POST_LIST,
+        SectionBlockType.ANNOUNCEMENT,
+    ];
+
     async getSectionsForPage(pageIdentifier: string, includeDrafts = false, includePosts = false): Promise<SectionResponse> {
         const safeIdentifier = pageIdentifier?.trim();
         if (!safeIdentifier) {
@@ -49,7 +54,9 @@ export class SectionService {
             const categoryIds = [
                 ...new Set(
                     sections
-                        .filter((section) => section.blockType === SectionBlockType.POST_LIST)
+                        .filter((section) =>
+                            this.sectionTypesWithCategoryPosts.includes(section.blockType),
+                        )
                         .flatMap((section) => section.settings?.categoryIds ?? [])
                         .filter((id): id is number => typeof id === "number"),
                 ),
@@ -61,7 +68,7 @@ export class SectionService {
 
                 const posts = await this.postRepository.find({
                     where,
-                    relations: ["author", "category", "page"],
+                    relations: ["author", "category", "page", "section", "sections"],
                     order: { createdAt: "DESC" },
                 });
 
@@ -91,7 +98,7 @@ export class SectionService {
                     : { sectionId: In(sectionIds), status: PostStatus.Published };
                 const posts = await this.postRepository.find({
                     where,
-                    relations: ["author", "category", "page"],
+                    relations: ["author", "category", "page", "section", "sections"],
                     order: { createdAt: "DESC" },
                 });
 
@@ -116,6 +123,21 @@ export class SectionService {
                     return block;
                 }
 
+                const isCategoryDriven = this.sectionTypesWithCategoryPosts.includes(section.blockType);
+                const categoryIds = section.settings?.categoryIds ?? [];
+                if (isCategoryDriven && categoryIds.length) {
+                    const merged = categoryIds.flatMap((id) => postsByCategoryId.get(id) ?? []);
+                    const unique = new Map<number, SectionBlockPost>();
+                    merged.forEach((post) => unique.set(post.id, post));
+                    let posts = Array.from(unique.values());
+                    const limit = section.settings?.limit;
+                    if (typeof limit === "number" && limit > 0) {
+                        posts = posts.slice(0, limit);
+                    }
+                    block.posts = posts;
+                    return block;
+                }
+
                 if (section.blockType !== SectionBlockType.POST_LIST) {
                     if (this.sectionTypesWithDirectPosts.includes(section.blockType)) {
                         block.posts = postsBySectionId.get(section.id) ?? [];
@@ -125,7 +147,6 @@ export class SectionService {
                     return block;
                 }
 
-                const categoryIds = section.settings?.categoryIds ?? [];
                 if (!categoryIds.length) {
                     block.posts = [];
                     return block;
@@ -252,12 +273,20 @@ export class SectionService {
             description: post.description ?? null,
             content: post.content ?? null,
             status: post.status,
+            isPublished: post.status === PostStatus.Published,
+            publishedAt: post.publishedAt ?? null,
+            isFeatured: post.isFeatured ?? false,
+            expiredAt: post.expiredAt ?? null,
             coverImage: post.coverImage ?? null,
             document: documentEn?.url ?? documentKm?.url ?? null,
             documentThumbnail: documentEn?.thumbnailUrl ?? documentKm?.thumbnailUrl ?? null,
             documents: {
                 en: documentEn,
                 km: documentKm,
+            },
+            documentThumbnails: {
+                en: documentEn?.thumbnailUrl ?? null,
+                km: documentKm?.thumbnailUrl ?? null,
             },
             link: post.link ?? null,
             createdAt: post.createdAt,
@@ -267,6 +296,21 @@ export class SectionService {
                 : null,
             category: post.category ? { id: post.category.id, name: post.category.name } : null,
             page: post.page ? { id: post.page.id, title: post.page.title, slug: post.page.slug } : null,
+            section: post.section
+                ? {
+                    id: post.section.id,
+                    pageId: post.section.pageId,
+                    blockType: post.section.blockType,
+                    title: post.section.title,
+                }
+                : null,
+            sections:
+                post.sections?.map((section) => ({
+                    id: section.id,
+                    pageId: section.pageId,
+                    blockType: section.blockType,
+                    title: section.title,
+                })) ?? [],
         };
     }
 

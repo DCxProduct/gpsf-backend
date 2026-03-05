@@ -52,6 +52,13 @@ export interface SectionBlockPostPage {
     slug: string;
 }
 
+export interface SectionBlockPostSection {
+    id: number;
+    pageId: number;
+    blockType: SectionBlockType;
+    title: LocalizedText;
+}
+
 export interface SectionBlockPost {
     id: number;
     title: PostLocalizedText;
@@ -59,6 +66,10 @@ export interface SectionBlockPost {
     description?: PostLocalizedText | null;
     content: Record<string, unknown> | null;
     status: string;
+    isPublished: boolean;
+    publishedAt?: Date | null;
+    isFeatured?: boolean;
+    expiredAt?: Date | null;
     coverImage?: string | null;
     document?: string | null;
     documentThumbnail?: string | null;
@@ -66,12 +77,18 @@ export interface SectionBlockPost {
         en?: LocalizedDocumentFile | null;
         km?: LocalizedDocumentFile | null;
     } | null;
+    documentThumbnails?: {
+        en?: string | null;
+        km?: string | null;
+    } | null;
     link?: string | null;
     createdAt: Date;
     updatedAt: Date;
     author: SectionBlockPostAuthor | null;
     category: SectionBlockCategory | null;
     page: SectionBlockPostPage | null;
+    section: SectionBlockPostSection | null;
+    sections: SectionBlockPostSection[];
 }
 
 export interface SectionResponse {
