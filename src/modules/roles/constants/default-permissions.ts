@@ -24,6 +24,7 @@ export const DEFAULT_ROLE_SEEDS: RoleSeed[] = [
         description: 'Full access to manage the application.',
         isSystem: true,
         permissions: [
+            { resource: Resource.ActivityLogs, actions: [Action.Read, Action.Delete] },
             { resource: Resource.Logo, actions: fullCrud },
             { resource: Resource.SiteSettings, actions: fullCrud },
             { resource: Resource.Categories, actions: fullCrud },

@@ -39,7 +39,8 @@ export class LogoService {
     const logo = this.logoRepository.create({
       url: this.toRelativePath(dto.url),
       title: dto.title ?? null,
-      description: dto.description,
+      // Save null when description is missing or sent as an empty string.
+      description: this.normalizeOptionalText(dto.description),
       link: dto.link,
     });
     return await this.logoRepository.save(logo);
@@ -50,7 +51,10 @@ export class LogoService {
 
     if (dto.url !== undefined) logo.url = this.toRelativePath(dto.url);
     if (dto.title !== undefined) logo.title = dto.title ?? null;
-    if (dto.description !== undefined) logo.description = dto.description;
+    if (dto.description !== undefined) {
+      // Keep omitted fields unchanged, but allow explicit null to clear the value.
+      logo.description = this.normalizeOptionalText(dto.description);
+    }
     if (dto.link !== undefined) logo.link = dto.link;
 
     return await this.logoRepository.save(logo);
@@ -70,5 +74,14 @@ export class LogoService {
     } catch {
       return url;
     }
+  }
+
+  private normalizeOptionalText(value?: string | null): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
   }
 }

@@ -13,6 +13,8 @@ import { CategoryEntity } from "@/modules/category/category.entity";
 import { PostService } from "@/modules/post/post.service";
 import { PostEntity } from "@/modules/post/post.entity";
 import { CategoryRelationSummary } from "@/modules/category/category.service";
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { ActivityLogModulePath } from '@/modules/activity-logs/activity-log.constants';
 
 
 @Controller("categories")
@@ -20,6 +22,7 @@ export class CategoryController {
     constructor(
         private categoryService: CategoryService,
         private readonly postService: PostService,
+        private readonly activityLogsService: ActivityLogsService,
     ) {}
 
     // Accept only 'en' or 'km' (case-insensitive); anything else is ignored.
@@ -136,23 +139,76 @@ export class CategoryController {
     create(@User() user: UserEntity, @Body() dto: CreateCategoryDto) {
         return this.categoryService
             .create(user, dto)
-            .then((c) => this.toCategoryResponse(c));
+            .then(async (c) => {
+                // Log after create so the table only shows successful category writes.
+                await this.activityLogsService.log({
+                    kind: 'created',
+                    activity: 'Category created',
+                    module: ActivityLogModulePath.category,
+                    resource: 'categories',
+                    actor: user,
+                    target: {
+                        id: c.id,
+                        type: 'category',
+                        label: this.toCategoryLabel(c),
+                        url: `/categories/${c.id}`,
+                    },
+                });
+                return this.toCategoryResponse(c);
+            });
     }
     @Put(':id')
     @UseGuards(AuthGuard, PermissionsGuard)
     @Permissions({ resource: Resource.Categories, actions: [Action.Update] })
     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-    update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+    async update(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCategoryDto) {
+        // Capture the previous category so update detail can show before/after values.
+        const before = await this.categoryService.findOne(id);
         return this.categoryService
             .update(id, dto)
-            .then((c) => this.toCategoryResponse(c));
+            .then(async (c) => {
+                await this.activityLogsService.log({
+                    kind: 'updated',
+                    activity: 'Category updated',
+                    module: ActivityLogModulePath.category,
+                    resource: 'categories',
+                    actor: user,
+                    target: {
+                        id: c.id,
+                        type: 'category',
+                        label: this.toCategoryLabel(c),
+                        url: `/categories/${c.id}`,
+                    },
+                    changes: this.activityLogsService.buildChanges(
+                        this.toCategoryLogSnapshot(before),
+                        this.toCategoryLogSnapshot(c),
+                    ),
+                });
+                return this.toCategoryResponse(c);
+            });
     }
 
     @Delete(':id')
     @UseGuards(AuthGuard, PermissionsGuard)
     @Permissions({ resource: Resource.Categories, actions: [Action.Delete] })
-    remove(@Param('id', ParseIntPipe) id: number) {
-        return this.categoryService.remove(id);
+    async remove(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number) {
+        // Keep a copy of the category label before delete for the log row.
+        const category = await this.categoryService.findOne(id);
+        await this.categoryService.remove(id);
+        await this.activityLogsService.log({
+            kind: 'deleted',
+            activity: 'Category deleted',
+            module: ActivityLogModulePath.category,
+            resource: 'categories',
+            actor: user,
+            target: {
+                id: category.id,
+                type: 'category',
+                label: this.toCategoryLabel(category),
+                url: `/categories/${category.id}`,
+            },
+        });
+        return { message: 'Category deleted' };
     }
 
     private toPostResponse(post: PostEntity) {
@@ -181,6 +237,18 @@ export class CategoryController {
                 : null,
             category: post.category ? { id: post.category.id, name: post.category.name } : null,
             page: post.page ? { id: post.page.id, title: post.page.title, slug: post.page.slug } : null,
+        };
+    }
+
+    private toCategoryLabel(category: CategoryEntity): string {
+        return category.name?.en?.trim() || category.name?.km?.trim() || `Category ${category.id}`;
+    }
+
+    private toCategoryLogSnapshot(category: CategoryEntity): Record<string, unknown> {
+        // Only include editable fields in the activity diff.
+        return {
+            name: category.name ?? null,
+            description: category.description ?? null,
         };
     }
 }

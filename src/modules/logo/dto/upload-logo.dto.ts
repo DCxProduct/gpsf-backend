@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UploadLogoDto {
   @IsNotEmpty()
@@ -11,10 +11,11 @@ export class UploadLogoDto {
   @MaxLength(200)
   title: string;
 
-  @IsNotEmpty()
+  // Description is optional so the frontend can submit null or skip the field.
+  @IsOptional()
   @IsString()
   @MaxLength(400)
-  description: string;
+  description?: string | null;
 
   @IsNotEmpty()
   @IsString()

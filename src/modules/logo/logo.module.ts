@@ -4,9 +4,10 @@ import { LogoEntity } from '@/modules/logo/logo.entity';
 import { LogoService } from '@/modules/logo/logo.service';
 import { LogoController } from '@/modules/logo/logo.controller';
 import { RoleModule } from '@/modules/roles/role.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([LogoEntity]), RoleModule],
+  imports: [TypeOrmModule.forFeature([LogoEntity]), RoleModule, ActivityLogsModule],
   controllers: [LogoController],
   providers: [LogoService],
   exports: [LogoService],

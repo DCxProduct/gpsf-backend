@@ -8,6 +8,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { AuthGuard } from './guards/auth.guard';
 import { AuthMiddleware } from './middlewares/auth.middleware';
 import { MailerModule } from './mailer/mailer.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MailerModule } from './mailer/mailer.module';
     }),
     UsersModule,
     MailerModule,
+    ActivityLogsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthGuard, AuthMiddleware],

@@ -7,6 +7,7 @@ import {StorageModule} from "@/storage/storage.module";
 import {MediaService} from "@/modules/media-manager/media.service";
 import { AuthModule } from '@/modules/auth/auth.module';
 import { RoleModule } from '@/modules/roles/role.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 
 @Module({
@@ -15,6 +16,7 @@ import { RoleModule } from '@/modules/roles/role.module';
         StorageModule,
         AuthModule,
         RoleModule,
+        ActivityLogsModule,
     ],
     controllers: [MediaController],
     providers: [MediaService],

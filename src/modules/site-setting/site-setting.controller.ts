@@ -26,6 +26,10 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadedFilePayload } from '@/types/uploaded-file.type';
 import { SiteSettingEntity } from '@/modules/site-setting/site-setting.entity';
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { ActivityLogModulePath } from '@/modules/activity-logs/activity-log.constants';
+import { User } from '@/modules/auth/decorators/user.decorator';
+import { UserEntity } from '@/modules/users/entities/user.entity';
 
 const SITE_LOGO_FIELDS: Array<{ name: string; maxCount: number }> = [
   { name: 'logo', maxCount: 1 },
@@ -55,7 +59,10 @@ const SITE_LOGO_UPLOAD_OPTIONS = {
 
 @Controller('site-settings')
 export class SiteSettingController {
-  constructor(private readonly siteSettingService: SiteSettingService) {}
+  constructor(
+    private readonly siteSettingService: SiteSettingService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   @Get()
   findAll() {
@@ -94,6 +101,7 @@ export class SiteSettingController {
     ),
   )
   create(
+    @User() user: UserEntity,
     @Body() dto: CreateSiteSettingDto,
     @UploadedFiles()
     files: Partial<Record<'logo' | 'siteLogo' | 'SiteLogo', UploadedFilePayload[]>>,
@@ -101,7 +109,23 @@ export class SiteSettingController {
     const file = this.pickFile(files);
     return this.siteSettingService
       .create(dto, file)
-      .then((item) => this.toSiteSettingResponse(item));
+      .then(async (item) => {
+        // Site settings writes often replace large JSON fields, so log a simple create row here.
+        await this.activityLogsService.log({
+          kind: 'created',
+          activity: 'Site settings created',
+          module: ActivityLogModulePath.siteSetting,
+          resource: 'site-settings',
+          actor: user,
+          target: {
+            id: item.id,
+            type: 'site-setting',
+            label: this.toLabel(item),
+            url: `/site-settings/${item.id}`,
+          },
+        });
+        return this.toSiteSettingResponse(item);
+      });
   }
 
   @Put('current')
@@ -115,14 +139,39 @@ export class SiteSettingController {
     ),
   )
   updateCurrent(
+    @User() user: UserEntity,
     @Body() dto: UpdateSiteSettingDto,
     @UploadedFiles()
     files: Partial<Record<'logo' | 'siteLogo' | 'SiteLogo', UploadedFilePayload[]>>,
   ) {
     const file = this.pickFile(files);
-    return this.siteSettingService
-      .upsertCurrent(dto, file)
-      .then((item) => this.toSiteSettingResponse(item));
+    // Upsert can either create or update, so check the current row first.
+    return this.siteSettingService.findCurrent().then((before) =>
+      this.siteSettingService
+        .upsertCurrent(dto, file)
+        .then(async (item) => {
+          await this.activityLogsService.log({
+            kind: before ? 'updated' : 'created',
+            activity: before ? 'Site settings updated' : 'Site settings created',
+            module: ActivityLogModulePath.siteSetting,
+            resource: 'site-settings',
+            actor: user,
+            target: {
+              id: item.id,
+              type: 'site-setting',
+              label: this.toLabel(item),
+              url: `/site-settings/${item.id}`,
+            },
+            changes: before
+              ? this.activityLogsService.buildChanges(
+                  this.toSiteSettingResponse(before) as Record<string, unknown>,
+                  this.toSiteSettingResponse(item) as Record<string, unknown>,
+                )
+              : null,
+          });
+          return this.toSiteSettingResponse(item);
+        }),
+    );
   }
 
   @Put(':id')
@@ -136,22 +185,61 @@ export class SiteSettingController {
     ),
   )
   update(
+    @User() user: UserEntity,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateSiteSettingDto,
     @UploadedFiles()
     files: Partial<Record<'logo' | 'siteLogo' | 'SiteLogo', UploadedFilePayload[]>>,
   ) {
     const file = this.pickFile(files);
-    return this.siteSettingService
-      .update(id, dto, file)
-      .then((item) => this.toSiteSettingResponse(item));
+    // Load the old settings first so the detail view can show what changed.
+    return this.siteSettingService.findOne(id).then((before) =>
+      this.siteSettingService
+        .update(id, dto, file)
+        .then(async (item) => {
+          await this.activityLogsService.log({
+            kind: 'updated',
+            activity: 'Site settings updated',
+            module: ActivityLogModulePath.siteSetting,
+            resource: 'site-settings',
+            actor: user,
+            target: {
+              id: item.id,
+              type: 'site-setting',
+              label: this.toLabel(item),
+              url: `/site-settings/${item.id}`,
+            },
+            changes: this.activityLogsService.buildChanges(
+              this.toSiteSettingResponse(before) as Record<string, unknown>,
+              this.toSiteSettingResponse(item) as Record<string, unknown>,
+            ),
+          });
+          return this.toSiteSettingResponse(item);
+        }),
+    );
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.SiteSettings, actions: [Action.Delete] })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.siteSettingService.remove(id);
+  async remove(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number) {
+    // Read before delete so the log still shows which settings record was removed.
+    const item = await this.siteSettingService.findOne(id);
+    await this.siteSettingService.remove(id);
+    await this.activityLogsService.log({
+      kind: 'deleted',
+      activity: 'Site settings deleted',
+      module: ActivityLogModulePath.siteSetting,
+      resource: 'site-settings',
+      actor: user,
+      target: {
+        id: item.id,
+        type: 'site-setting',
+        label: this.toLabel(item),
+        url: `/site-settings/${item.id}`,
+      },
+    });
+    return { message: 'Site setting deleted' };
   }
 
   private pickFile(
@@ -180,5 +268,9 @@ export class SiteSettingController {
       createdAt: siteSetting.createdAt,
       updatedAt: siteSetting.updatedAt,
     };
+  }
+
+  private toLabel(siteSetting: SiteSettingEntity): string {
+    return siteSetting.title?.en?.trim() || siteSetting.title?.km?.trim() || `Site Setting ${siteSetting.id}`;
   }
 }

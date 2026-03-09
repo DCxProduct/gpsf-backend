@@ -29,10 +29,15 @@ import { User } from '@/modules/auth/decorators/user.decorator';
 import { UserEntity } from '@/modules/users/entities/user.entity';
 import type { UploadedFilePayload } from '@/types/uploaded-file.type';
 import { PostEntity } from '@/modules/post/post.entity';
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { ActivityLogModulePath } from '@/modules/activity-logs/activity-log.constants';
 
 @Controller('posts')
 export class PostController {
-  constructor(private readonly postService: PostService) {}
+  constructor(
+    private readonly postService: PostService,
+    private readonly activityLogsService: ActivityLogsService,
+  ) {}
 
   @Get()
   async findAll(
@@ -133,7 +138,23 @@ export class PostController {
     const documentKm = files?.documentKm?.[0];
     return this.postService
       .create(user, dto, { coverImage, document, documentEn, documentKm })
-      .then((post) => this.toPostResponse(post));
+      .then(async (post) => {
+        // Save a simple activity row after the post is created successfully.
+        await this.activityLogsService.log({
+          kind: 'created',
+          activity: 'Post created',
+          module: ActivityLogModulePath.post,
+          resource: 'posts',
+          actor: user,
+          target: {
+            id: post.id,
+            type: 'post',
+            label: this.toPostLabel(post),
+            url: `/posts/${post.id}`,
+          },
+        });
+        return this.toPostResponse(post);
+      });
   }
 
   @Put(':id')
@@ -155,6 +176,7 @@ export class PostController {
     ),
   )
   update(
+    @User() user: UserEntity,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePostDto,
     @UploadedFiles()
@@ -170,15 +192,53 @@ export class PostController {
     const documentEn = files?.documentEn?.[0];
     const documentKm = files?.documentKm?.[0];
     return this.postService
-      .update(id, dto, { coverImage, document, documentEn, documentKm })
-      .then((post) => this.toPostResponse(post));
+      // Load the old post first so we can build before/after changes for the detail view.
+      .findOne(id)
+      .then((before) => ({ before, snapshot: this.toPostLogSnapshot(before) }))
+      .then(({ before, snapshot }) =>
+        this.postService
+          .update(id, dto, { coverImage, document, documentEn, documentKm })
+          .then(async (post) => {
+            await this.activityLogsService.log({
+              kind: 'updated',
+              activity: 'Post updated',
+              module: ActivityLogModulePath.post,
+              resource: 'posts',
+              actor: user,
+              target: {
+                id: post.id,
+                type: 'post',
+                label: this.toPostLabel(post),
+                url: `/posts/${post.id}`,
+              },
+              changes: this.activityLogsService.buildChanges(snapshot, this.toPostLogSnapshot(post)),
+            });
+            return this.toPostResponse(post);
+          }),
+      );
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Posts, actions: [Action.Delete] })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.postService.remove(id);
+  async remove(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number) {
+    // Read the post before delete so the log still keeps its label and target id.
+    const post = await this.postService.findOne(id);
+    await this.postService.remove(id);
+    await this.activityLogsService.log({
+      kind: 'deleted',
+      activity: 'Post deleted',
+      module: ActivityLogModulePath.post,
+      resource: 'posts',
+      actor: user,
+      target: {
+        id: post.id,
+        type: 'post',
+        label: this.toPostLabel(post),
+        url: `/posts/${post.id}`,
+      },
+    });
+    return { message: 'Post deleted' };
   }
 
   private parseBooleanQuery(value: string | undefined, fieldName: string): boolean | undefined {
@@ -240,6 +300,31 @@ export class PostController {
           blockType: section.blockType,
           title: section.title,
         })) ?? [],
+    };
+  }
+
+  private toPostLabel(post: PostEntity): string {
+    return post.title?.en?.trim() || post.title?.km?.trim() || post.slug || `Post ${post.id}`;
+  }
+
+  private toPostLogSnapshot(post: PostEntity): Record<string, unknown> {
+    // Keep only fields that matter for activity history and diff display.
+    return {
+      title: post.title ?? null,
+      description: post.description ?? null,
+      slug: post.slug ?? null,
+      content: post.content ?? null,
+      status: post.status,
+      publishedAt: post.publishedAt ?? null,
+      expiredAt: post.expiredAt ?? null,
+      isFeatured: post.isFeatured,
+      coverImage: post.coverImage ?? null,
+      documents: post.documents ?? null,
+      link: post.link ?? null,
+      categoryId: post.category?.id ?? null,
+      pageId: post.page?.id ?? null,
+      sectionId: post.section?.id ?? post.sectionId ?? null,
+      sectionIds: post.sections?.map((section) => section.id) ?? [],
     };
   }
 }

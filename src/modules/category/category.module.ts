@@ -6,10 +6,11 @@ import { CategoryEntity } from "@/modules/category/category.entity";
 import { RoleModule } from "@/modules/roles/role.module";
 import { PostModule } from "@/modules/post/post.module";
 import { PostEntity } from "@/modules/post/post.entity";
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module(
     {
-        imports: [TypeOrmModule.forFeature([CategoryEntity, PostEntity]), RoleModule, PostModule],
+        imports: [TypeOrmModule.forFeature([CategoryEntity, PostEntity]), RoleModule, PostModule, ActivityLogsModule],
         controllers: [CategoryController],
         providers: [CategoryService],
         exports: [CategoryService]

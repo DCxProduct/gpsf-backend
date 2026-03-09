@@ -11,6 +11,9 @@ import { Role } from '@/modules/auth/enums/role.enum';
 import { User } from '@/modules/auth/decorators/user.decorator';
 import { SectionService } from '@/modules/section/section.service';
 import { UserEntity } from '@/modules/users/entities/user.entity';
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { ActivityLogModulePath } from '@/modules/activity-logs/activity-log.constants';
+import { PageEntity } from '@/modules/page/page.entity';
 
 @Controller('pages')
 export class PageController {
@@ -18,6 +21,7 @@ export class PageController {
     private readonly pageService: PageService,
     @Inject(forwardRef(() => SectionService))
     private readonly sectionService: SectionService,
+    private readonly activityLogsService: ActivityLogsService,
   ) {}
 
   @Get()
@@ -116,23 +120,70 @@ export class PageController {
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Pages, actions: [Action.Create] })
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-  create(@User() user: UserEntity, @Body() dto: CreatePageDto) {
-    return this.pageService.create(user, dto);
+  async create(@User() user: UserEntity, @Body() dto: CreatePageDto) {
+    const page = await this.pageService.create(user, dto);
+    await this.activityLogsService.log({
+      kind: 'created',
+      activity: 'Page created',
+      module: ActivityLogModulePath.page,
+      resource: 'pages',
+      actor: user,
+      target: {
+        id: page.id,
+        type: 'page',
+        label: this.toPageLabel(page),
+        url: `/pages/${page.slug || page.id}`,
+      },
+    });
+    return page;
   }
 
   @Put(':identifier')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Pages, actions: [Action.Update] })
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-  update(@Param('identifier') identifier: string, @Body() dto: UpdatePageDto) {
-    return this.pageService.update(identifier, dto);
+  async update(@User() user: UserEntity, @Param('identifier') identifier: string, @Body() dto: UpdatePageDto) {
+    // Capture the old values first so the detail modal can show before/after changes.
+    const before = await this.pageService.findByIdentifier(identifier, true);
+    const beforeSnapshot = this.toPageLogSnapshot(before);
+    const page = await this.pageService.update(identifier, dto);
+    await this.activityLogsService.log({
+      kind: 'updated',
+      activity: 'Page content updated',
+      module: ActivityLogModulePath.page,
+      resource: 'pages',
+      actor: user,
+      target: {
+        id: page.id,
+        type: 'page',
+        label: this.toPageLabel(page),
+        url: `/pages/${page.slug || page.id}`,
+      },
+      changes: this.activityLogsService.buildChanges(beforeSnapshot, this.toPageLogSnapshot(page)),
+    });
+    return page;
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.Pages, actions: [Action.Delete] })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.pageService.remove(id);
+  async remove(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number) {
+    const page = await this.pageService.findById(id, true);
+    await this.pageService.remove(id);
+    await this.activityLogsService.log({
+      kind: 'deleted',
+      activity: 'Page deleted',
+      module: ActivityLogModulePath.page,
+      resource: 'pages',
+      actor: user,
+      target: {
+        id: page.id,
+        type: 'page',
+        label: this.toPageLabel(page),
+        url: `/pages/${page.slug || page.id}`,
+      },
+    });
+    return { message: 'Page deleted' };
   }
 
   private normalizeLang(lang?: string): 'en' | 'km' | undefined {
@@ -154,5 +205,21 @@ export class PageController {
       return null;
     }
     return value[lang] ?? value.en ?? value.km ?? null;
+  }
+
+  private toPageLabel(page: PageEntity): string {
+    return page.title?.en?.trim() || page.title?.km?.trim() || page.slug || `Page ${page.id}`;
+  }
+
+  private toPageLogSnapshot(page: PageEntity): Record<string, unknown> {
+    // Keep the snapshot small and focused on fields editors actually care about.
+    return {
+      title: page.title ?? null,
+      slug: page.slug ?? null,
+      status: page.status,
+      publishedAt: page.publishedAt ?? null,
+      metaTitle: page.metaTitle ?? null,
+      metaDescription: page.metaDescription ?? null,
+    };
   }
 }

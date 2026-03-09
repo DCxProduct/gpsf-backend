@@ -1,4 +1,5 @@
 export enum Resource {
+    ActivityLogs = 'activity-logs',
     Logo = 'logo',
     Categories = 'categories',
     Pages = 'pages',

@@ -8,12 +8,14 @@ import { SectionModule } from '@/modules/section/section.module';
 import { SectionEntity } from '@/modules/section/section.entity';
 import { PostEntity } from '@/modules/post/post.entity';
 import { CategoryEntity } from '@/modules/category/category.entity';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PageEntity, SectionEntity, PostEntity, CategoryEntity]),
     RoleModule,
     forwardRef(() => SectionModule),
+    ActivityLogsModule,
   ],
   controllers: [PageController],
   providers: [PageService],

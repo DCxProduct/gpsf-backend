@@ -4,9 +4,10 @@ import { SiteSettingController } from '@/modules/site-setting/site-setting.contr
 import { SiteSettingService } from '@/modules/site-setting/site-setting.service';
 import { SiteSettingEntity } from '@/modules/site-setting/site-setting.entity';
 import { RoleModule } from '@/modules/roles/role.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SiteSettingEntity]), RoleModule],
+  imports: [TypeOrmModule.forFeature([SiteSettingEntity]), RoleModule, ActivityLogsModule],
   controllers: [SiteSettingController],
   providers: [SiteSettingService],
   exports: [SiteSettingService],

@@ -12,10 +12,11 @@ export class UpdateLogoDto {
   @MaxLength(200)
   title?: string;
 
+  // Allow description to be removed during update.
   @IsOptional()
   @IsString()
   @MaxLength(400)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsString()

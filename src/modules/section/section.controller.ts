@@ -21,10 +21,18 @@ import { PermissionsGuard } from "@/modules/roles/guards/permissions.guard";
 import { Permissions } from "@/modules/roles/decorator/permissions.decorator";
 import { Resource } from "@/modules/roles/enums/resource.enum";
 import { Action } from "@/modules/roles/enums/actions.enum";
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { ActivityLogModulePath } from '@/modules/activity-logs/activity-log.constants';
+import { User } from '@/modules/auth/decorators/user.decorator';
+import { UserEntity } from '@/modules/users/entities/user.entity';
+import { SectionEntity } from './section.entity';
 
 @Controller("sections")
 export class SectionController {
-    constructor(private readonly sectionService: SectionService) {}
+    constructor(
+        private readonly sectionService: SectionService,
+        private readonly activityLogsService: ActivityLogsService,
+    ) {}
 
     @Get("page/:slug")
     async getSectionsByPage(
@@ -76,23 +84,90 @@ export class SectionController {
     @UseGuards(AuthGuard, PermissionsGuard)
     @Permissions({ resource: Resource.Sections, actions: [Action.Create] })
     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-    async createSection(@Body() dto: CreateSectionDto) {
-        return await this.sectionService.createSection(dto);
+    async createSection(@User() user: UserEntity, @Body() dto: CreateSectionDto) {
+        const section = await this.sectionService.createSection(dto);
+        // New section rows link directly to the section detail route.
+        await this.activityLogsService.log({
+            kind: 'created',
+            activity: 'Section created',
+            module: ActivityLogModulePath.section,
+            resource: 'sections',
+            actor: user,
+            target: {
+                id: section.id,
+                type: 'section',
+                label: this.toSectionLabel(section),
+                url: `/sections/${section.id}`,
+            },
+        });
+        return section;
     }
 
     @Put(":id")
     @UseGuards(AuthGuard, PermissionsGuard)
     @Permissions({ resource: Resource.Sections, actions: [Action.Update] })
     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-    async updateSection(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateSectionDto) {
-        return await this.sectionService.updateSection(id, dto);
+    async updateSection(@User() user: UserEntity, @Param("id", ParseIntPipe) id: number, @Body() dto: UpdateSectionDto) {
+        // Read before update so the activity detail can show the exact block changes.
+        const before = await this.sectionService.findSectionById(id);
+        const section = await this.sectionService.updateSection(id, dto);
+        await this.activityLogsService.log({
+            kind: 'updated',
+            activity: 'Section updated',
+            module: ActivityLogModulePath.section,
+            resource: 'sections',
+            actor: user,
+            target: {
+                id: section.id,
+                type: 'section',
+                label: this.toSectionLabel(section),
+                url: `/sections/${section.id}`,
+            },
+            changes: this.activityLogsService.buildChanges(
+                this.toSectionLogSnapshot(before),
+                this.toSectionLogSnapshot(section),
+            ),
+        });
+        return section;
     }
 
     @Delete(":id")
     @UseGuards(AuthGuard, PermissionsGuard)
     @Permissions({ resource: Resource.Sections, actions: [Action.Delete] })
-    async deleteSection(@Param("id", ParseIntPipe) id: number) {
+    async deleteSection(@User() user: UserEntity, @Param("id", ParseIntPipe) id: number) {
+        // Keep section info before delete so the activity row still has a label.
+        const section = await this.sectionService.findSectionById(id);
         await this.sectionService.deleteSection(id);
+        await this.activityLogsService.log({
+            kind: 'deleted',
+            activity: 'Section deleted',
+            module: ActivityLogModulePath.section,
+            resource: 'sections',
+            actor: user,
+            target: {
+                id: section.id,
+                type: 'section',
+                label: this.toSectionLabel(section),
+                url: `/sections/${section.id}`,
+            },
+        });
         return { message: "Section deleted" };
+    }
+
+    private toSectionLabel(section: SectionEntity): string {
+        return section.title?.en?.trim() || section.title?.km?.trim() || section.blockType || `Section ${section.id}`;
+    }
+
+    private toSectionLogSnapshot(section: SectionEntity): Record<string, unknown> {
+        // Snapshot only fields that are editable from the section form.
+        return {
+            pageId: section.pageId,
+            blockType: section.blockType,
+            title: section.title ?? null,
+            description: section.description ?? null,
+            settings: section.settings ?? null,
+            orderIndex: section.orderIndex,
+            enabled: section.enabled,
+        };
     }
 }

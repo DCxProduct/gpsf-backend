@@ -18,6 +18,7 @@ import {SectionModule} from './modules/section/section.module';
 import {TestimonialModule} from '@/modules/testimonial/testimonial.module';
 import {WorkingGroupModule} from '@/modules/working-group/working-group.module';
 import {ContactModule} from '@/modules/contact/contact.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 
 @Module({
@@ -40,6 +41,7 @@ import {ContactModule} from '@/modules/contact/contact.module';
         TestimonialModule,
         WorkingGroupModule,
         ContactModule,
+        ActivityLogsModule,
 
     ],
     controllers: [AppController],

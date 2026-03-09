@@ -11,8 +11,8 @@ export class LogoEntity {
   @Column({ type: 'varchar', length: 200, nullable: true })
   title?: string | null;
 
-  @Column({ type: 'varchar', length: 400 })
-  description: string;
+  @Column({ type: 'varchar', length: 400, nullable: true })
+  description?: string | null;
 
   @Column({ type: 'varchar', length: 600 })
   link: string;

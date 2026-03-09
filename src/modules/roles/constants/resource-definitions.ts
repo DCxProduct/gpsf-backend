@@ -15,6 +15,15 @@ export interface ResourceDefinition {
 
 export const RESOURCE_DEFINITIONS: ResourceDefinition[] = [
     {
+        resource: Resource.ActivityLogs,
+        label: 'Activity Logs',
+        description: 'Review and delete backend activity logs.',
+        actions: [
+            { action: Action.Read, label: 'View' },
+            { action: Action.Delete, label: 'Delete' },
+        ],
+    },
+    {
         resource: Resource.Logo,
         label: 'Logo',
         description: 'Create and manage the site logo.',
