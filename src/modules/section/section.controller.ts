@@ -45,8 +45,16 @@ export class SectionController {
     }
 
     @Get()
-    async listSections(@Query("pageSlug") pageSlug?: string) {
-        const sections = await this.sectionService.listSections(pageSlug);
+    async listSections(
+        @Query("pageId") pageId?: string,
+        @Query("pageSlug") pageSlug?: string,
+    ) {
+        const parsedPageId = pageId !== undefined ? Number(pageId) : undefined;
+        const resolvedPageId =
+            typeof parsedPageId === "number" && Number.isInteger(parsedPageId) && parsedPageId > 0
+                ? parsedPageId
+                : undefined;
+        const sections = await this.sectionService.listSections(resolvedPageId, pageSlug);
         return sections.map((section) => ({
             id: section.id,
             pageId: section.pageId,

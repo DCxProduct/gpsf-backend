@@ -166,18 +166,31 @@ export class SectionService {
         };
     }
 
-    async listSections(pageSlug?: string): Promise<SectionEntity[]> {
-        const qb = this.sectionRepository
+    async listSections(pageId?: number, pageSlug?: string): Promise<SectionEntity[]> {
+        if (pageId !== undefined || pageSlug) {
+            const filteredSections = await this.createSectionListQuery()
+                // Prefer pageId for CMS selects because dropdowns usually store ids.
+                .andWhere(
+                    pageId !== undefined ? "page.id = :pageId" : "page.slug = :slug",
+                    pageId !== undefined ? { pageId } : { slug: pageSlug },
+                )
+                .getMany();
+
+            // If the selected page has no linked sections, fall back to all sections.
+            if (filteredSections.length > 0) {
+                return filteredSections;
+            }
+        }
+
+        return await this.createSectionListQuery().getMany();
+    }
+
+    private createSectionListQuery() {
+        return this.sectionRepository
             .createQueryBuilder("section")
             .leftJoinAndSelect("section.page", "page")
             .orderBy("section.orderIndex", "ASC")
             .addOrderBy("section.createdAt", "ASC");
-
-        if (pageSlug) {
-            qb.andWhere("page.slug = :slug", { slug: pageSlug });
-        }
-
-        return await qb.getMany();
     }
 
     async findSectionById(id: number): Promise<SectionEntity> {
