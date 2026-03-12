@@ -1,6 +1,6 @@
 import {HttpException, HttpStatus, Injectable} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
-import {In, Repository} from 'typeorm';
+import {Brackets, In, Repository} from 'typeorm';
 import {PostDocuments, PostEntity, PostStatus} from '@/modules/post/post.entity';
 import slugify from 'slugify';
 import {CreatePostDto} from '@/modules/post/dto/create-post.dto';
@@ -165,12 +165,16 @@ export class PostService {
         pageSize = 20,
         isFeatured?: boolean,
         title?: string,
+        pageId?: number,
+        sectionId?: number,
     ): Promise<{ items: PostEntity[]; total: number }> {
         const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
         const current = Math.max(Number(page) || 1, 1);
         const skip = (current - 1) * take;
         const qb = this.postRepository
             .createQueryBuilder('post')
+            // Distinct keeps pagination/count stable when a post has many linked sections.
+            .distinct(true)
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.category', 'category')
             .leftJoinAndSelect('post.page', 'page')
@@ -189,6 +193,21 @@ export class PostService {
             qb.andWhere(
                 `(LOWER(post.title ->> 'en') LIKE :title OR LOWER(post.title ->> 'km') LIKE :title)`,
                 {title: `%${normalizedTitle.toLowerCase()}%`},
+            );
+        }
+
+        if (pageId !== undefined) {
+            qb.andWhere('page.id = :pageId', { pageId });
+        }
+
+        if (sectionId !== undefined) {
+            // Match both the direct section relation and the many-to-many linked sections.
+            qb.andWhere(
+                new Brackets((subQuery) => {
+                    subQuery
+                        .where('section.id = :sectionId', { sectionId })
+                        .orWhere('sections.id = :sectionId', { sectionId });
+                }),
             );
         }
 

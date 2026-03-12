@@ -45,11 +45,22 @@ export class PostController {
     @Query('pageSize') pageSize?: number,
     @Query('isFeatured') isFeatured?: string,
     @Query('title') title?: string,
+    @Query('pageId') pageId?: string,
+    @Query('sectionId') sectionId?: string,
   ) {
     const current = Math.max(Number(page) || 1, 1);
     const size = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
     const featuredFilter = this.parseBooleanQuery(isFeatured, 'isFeatured');
-    const { items, total } = await this.postService.findAll(current, size, featuredFilter, title);
+    const pageFilter = this.parsePositiveIntQuery(pageId, 'pageId');
+    const sectionFilter = this.parsePositiveIntQuery(sectionId, 'sectionId');
+    const { items, total } = await this.postService.findAll(
+      current,
+      size,
+      featuredFilter,
+      title,
+      pageFilter,
+      sectionFilter,
+    );
     const data = items.map((post) => this.toPostResponse(post));
     return {
       success: true,
@@ -255,6 +266,19 @@ export class PostController {
     }
 
     throw new BadRequestException(`${fieldName} must be true or false`);
+  }
+
+  private parsePositiveIntQuery(value: string | undefined, fieldName: string): number | undefined {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+
+    throw new BadRequestException(`${fieldName} must be a positive integer`);
   }
 
   private toPostResponse(post: PostEntity) {
