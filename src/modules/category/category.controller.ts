@@ -73,6 +73,19 @@ export class CategoryController {
         throw new BadRequestException(`${fieldName} must be true or false`);
     }
 
+    private parsePositiveIntQuery(value: string | undefined, fieldName: string): number | undefined {
+        if (value === undefined || value === '') {
+            return undefined;
+        }
+
+        const parsed = Number(value);
+        if (Number.isInteger(parsed) && parsed > 0) {
+            return parsed;
+        }
+
+        throw new BadRequestException(`${fieldName} must be a positive integer`);
+    }
+
     private toCategoryResponse(category: CategoryEntity, lang?: 'en' | 'km') {
         return this.toCategoryResponseWithSummary(category, lang);
     }
@@ -94,6 +107,14 @@ export class CategoryController {
             id: category.id,
             name: localized ? this.pickLocalizedField(category.name, lang) : category.name,
             description: localized ? this.pickLocalizedField(category.description, lang) : category.description,
+            // These explicit links drive the page-specific filter sidebar in CMS/frontend.
+            pageIds: category.pages?.map((page) => page.id) ?? [],
+            pages:
+                category.pages?.map((page) => ({
+                    id: page.id,
+                    title: localized ? this.pickLocalizedField(page.title, lang) : page.title,
+                    slug: page.slug,
+                })) ?? [],
             createdAt: category.createdAt,
             updatedAt: category.updatedAt,
             createdBy: category.createdBy
@@ -104,9 +125,10 @@ export class CategoryController {
     }
 
     @Get()
-    async findAll(@Query('lang') lang?: string) {
+    async findAll(@Query('lang') lang?: string, @Query('pageId') pageId?: string) {
         const normalized = this.normalizeLang(lang);
-        const categories = await this.categoryService.findAll();
+        const pageFilter = this.parsePositiveIntQuery(pageId, 'pageId');
+        const categories = await this.categoryService.findAll(pageFilter);
         const summaryMap = await this.categoryService.getRelationSummaries(categories.map((c) => c.id));
         return categories.map((c) =>
             this.toCategoryResponseWithSummary(c, normalized, summaryMap.get(c.id)),
@@ -249,6 +271,7 @@ export class CategoryController {
         return {
             name: category.name ?? null,
             description: category.description ?? null,
+            pageIds: category.pages?.map((page) => page.id) ?? [],
         };
     }
 }

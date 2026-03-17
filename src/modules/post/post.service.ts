@@ -164,9 +164,11 @@ export class PostService {
         page = 1,
         pageSize = 20,
         isFeatured?: boolean,
-        title?: string,
+        search?: string,
         pageId?: number,
         sectionId?: number,
+        categoryId?: number,
+        dateRange?: string,
     ): Promise<{ items: PostEntity[]; total: number }> {
         const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
         const current = Math.max(Number(page) || 1, 1);
@@ -188,11 +190,18 @@ export class PostService {
             qb.andWhere('post.isFeatured = :isFeatured', {isFeatured});
         }
 
-        const normalizedTitle = title?.trim();
-        if (normalizedTitle) {
+        const normalizedSearch = search?.trim();
+        if (normalizedSearch) {
             qb.andWhere(
-                `(LOWER(post.title ->> 'en') LIKE :title OR LOWER(post.title ->> 'km') LIKE :title)`,
-                {title: `%${normalizedTitle.toLowerCase()}%`},
+                new Brackets((subQuery) => {
+                    // One search value is enough for the documents/search page UI.
+                    subQuery
+                        .where(`LOWER(post.title ->> 'en') LIKE :search`, { search: `%${normalizedSearch.toLowerCase()}%` })
+                        .orWhere(`LOWER(post.title ->> 'km') LIKE :search`, { search: `%${normalizedSearch.toLowerCase()}%` })
+                        .orWhere(`LOWER(COALESCE(post.slug, '')) LIKE :search`, { search: `%${normalizedSearch.toLowerCase()}%` })
+                        .orWhere(`LOWER(COALESCE(post.description::text, '')) LIKE :search`, { search: `%${normalizedSearch.toLowerCase()}%` })
+                        .orWhere(`LOWER(COALESCE(post.content::text, '')) LIKE :search`, { search: `%${normalizedSearch.toLowerCase()}%` });
+                }),
             );
         }
 
@@ -209,6 +218,18 @@ export class PostService {
                         .orWhere('sections.id = :sectionId', { sectionId });
                 }),
             );
+        }
+
+        if (categoryId !== undefined) {
+            qb.andWhere('category.id = :categoryId', { categoryId });
+        }
+
+        const parsedDateRange = this.parseDateRange(dateRange);
+        if (parsedDateRange) {
+            qb.andWhere('post.publishedAt BETWEEN :dateFrom AND :dateTo', {
+                dateFrom: parsedDateRange.from,
+                dateTo: parsedDateRange.to,
+            });
         }
 
         const [items, total] = await qb.getManyAndCount();
@@ -516,6 +537,29 @@ export class PostService {
 
     private getUploadRoot(): string {
         return (process.env.LOCAL_UPLOAD_PATH || 'uploads').replace(/^\/+|\/+$/g, '');
+    }
+
+    private parseDateRange(dateRange?: string): { from: Date; to: Date } | null {
+        if (!dateRange) {
+            return null;
+        }
+
+        const normalized = dateRange.trim();
+        const match = normalized.match(/^(\d{4})-(\d{4})$/);
+        if (!match) {
+            throw new HttpException('dateRange must use YYYY-YYYY format', HttpStatus.BAD_REQUEST);
+        }
+
+        const fromYear = Number(match[1]);
+        const toYear = Number(match[2]);
+        if (fromYear > toYear) {
+            throw new HttpException('dateRange start year must be before end year', HttpStatus.BAD_REQUEST);
+        }
+
+        return {
+            from: new Date(`${fromYear}-01-01T00:00:00.000Z`),
+            to: new Date(`${toYear}-12-31T23:59:59.999Z`),
+        };
     }
 
     private resolveStatusFromInput(

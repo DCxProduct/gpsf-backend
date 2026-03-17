@@ -6,6 +6,7 @@ import { CreateCategoryDto } from "@/modules/category/dto/create-category.dto";
 import { UpdateCategoryDto } from "@/modules/category/dto/update-category.dto";
 import { UserEntity } from "@/modules/users/entities/user.entity";
 import { PostEntity } from "@/modules/post/post.entity";
+import { PageEntity } from '@/modules/page/page.entity';
 
 export interface CategoryRelationPage {
     id: number;
@@ -35,6 +36,8 @@ export class CategoryService {
         private readonly categoryRepository: Repository<CategoryEntity>,
         @InjectRepository(PostEntity)
         private readonly postRepository: Repository<PostEntity>,
+        @InjectRepository(PageEntity)
+        private readonly pageRepository: Repository<PageEntity>,
     ) {}
 
     async create(user: UserEntity, dto: CreateCategoryDto): Promise<CategoryEntity> {
@@ -42,16 +45,36 @@ export class CategoryService {
         if (existing) {
             throw new HttpException('Category name already exists', HttpStatus.UNPROCESSABLE_ENTITY);
         }
-        const category = this.categoryRepository.create({ ...dto, createdBy: user ?? null });
+
+        const category = this.categoryRepository.create({
+            name: dto.name,
+            description: dto.description,
+            createdBy: user ?? null,
+        });
+
+        // Page links are managed directly by CMS so the sidebar does not depend on post data.
+        category.pages = await this.resolvePages(dto.pageIds);
+
         return await this.categoryRepository.save(category);
     }
 
-    async findAll(): Promise<CategoryEntity[]> {
-        return await this.categoryRepository.find({ order: { createdAt: 'DESC' }, relations: ['createdBy'] });
+    async findAll(pageId?: number): Promise<CategoryEntity[]> {
+        const qb = this.categoryRepository
+            .createQueryBuilder('category')
+            .distinct(true)
+            .leftJoinAndSelect('category.createdBy', 'createdBy')
+            .leftJoinAndSelect('category.pages', 'page')
+            .orderBy('category.createdAt', 'DESC');
+
+        if (pageId !== undefined) {
+            qb.innerJoin('category.pages', 'filterPage', 'filterPage.id = :pageId', { pageId });
+        }
+
+        return await qb.getMany();
     }
 
     async findOne(id: number): Promise<CategoryEntity> {
-        const category = await this.categoryRepository.findOne({ where: { id }, relations: ['createdBy'] });
+        const category = await this.categoryRepository.findOne({ where: { id }, relations: ['createdBy', 'pages'] });
         if (!category) {
             throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
         }
@@ -72,6 +95,11 @@ export class CategoryService {
 
         if (dto.description !== undefined) {
             category.description = { ...(category.description ?? {}), ...dto.description };
+        }
+
+        if (dto.pageIds !== undefined) {
+            // An empty array means "clear all linked pages".
+            category.pages = await this.resolvePages(dto.pageIds);
         }
 
         return await this.categoryRepository.save(category);
@@ -165,6 +193,24 @@ export class CategoryService {
         });
 
         return summaryMap;
+    }
+
+    private async resolvePages(pageIds?: number[]): Promise<PageEntity[]> {
+        if (pageIds === undefined) {
+            return [];
+        }
+
+        if (!pageIds.length) {
+            return [];
+        }
+
+        const uniqueIds = Array.from(new Set(pageIds));
+        const pages = await this.pageRepository.find({ where: { id: In(uniqueIds) } });
+        if (pages.length !== uniqueIds.length) {
+            throw new HttpException('Page not found', HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        return pages;
     }
 
 }

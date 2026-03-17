@@ -1,5 +1,6 @@
-import { BeforeUpdate, Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import { BeforeUpdate, Column, CreateDateColumn, Entity, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 import { UserEntity } from "@/modules/users/entities/user.entity";
+import { PageEntity } from '@/modules/page/page.entity';
 
 @Entity({ name: 'categories' })
 export class CategoryEntity {
@@ -25,6 +26,15 @@ export class CategoryEntity {
 
   @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
   createdBy?: UserEntity | null;
+
+  // Categories can be reused across many pages, and each page can expose many categories.
+  @ManyToMany(() => PageEntity, (page) => page.categories)
+  @JoinTable({
+    name: 'page_categories',
+    joinColumn: { name: 'categoryId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'pageId', referencedColumnName: 'id' },
+  })
+  pages?: PageEntity[];
 
   @BeforeUpdate()
   updateTimestamp() {

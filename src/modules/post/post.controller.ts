@@ -45,21 +45,27 @@ export class PostController {
     @Query('pageSize') pageSize?: number,
     @Query('isFeatured') isFeatured?: string,
     @Query('title') title?: string,
+    @Query('search') search?: string,
     @Query('pageId') pageId?: string,
     @Query('sectionId') sectionId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('dateRange') dateRange?: string,
   ) {
     const current = Math.max(Number(page) || 1, 1);
     const size = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
     const featuredFilter = this.parseBooleanQuery(isFeatured, 'isFeatured');
     const pageFilter = this.parsePositiveIntQuery(pageId, 'pageId');
     const sectionFilter = this.parsePositiveIntQuery(sectionId, 'sectionId');
+    const categoryFilter = this.parsePositiveIntQuery(categoryId, 'categoryId');
     const { items, total } = await this.postService.findAll(
       current,
       size,
       featuredFilter,
-      title,
+      search?.trim() || title?.trim(),
       pageFilter,
       sectionFilter,
+      categoryFilter,
+      dateRange,
     );
     const data = items.map((post) => this.toPostResponse(post));
     return {

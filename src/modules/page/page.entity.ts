@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import {UserEntity} from '@/modules/users/entities/user.entity';
 import { SectionEntity } from '@/modules/section/section.entity';
+import { CategoryEntity } from '@/modules/category/category.entity';
 
 export enum PageStatus {
     Draft = 'draft',
@@ -35,6 +36,10 @@ export class PageEntity {
 
     @OneToMany(() => SectionEntity, (section) => section.page)
     sections?: SectionEntity[];
+
+    // Pages can choose which categories should appear in their frontend filter UI.
+    @ManyToMany(() => CategoryEntity, (category) => category.pages)
+    categories?: CategoryEntity[];
 
     sectionCount?: number;
 
