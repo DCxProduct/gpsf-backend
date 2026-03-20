@@ -115,7 +115,6 @@ export class SiteSettingService {
     file?: UploadedFilePayload | null,
   ): Promise<SiteSettingEntity> {
     const siteSetting = await this.findOne(id);
-    const previousLogo = siteSetting.logo ?? null;
     this.applyDto(siteSetting, dto, false);
 
     let uploadedLogo: string | null = null;
@@ -127,12 +126,8 @@ export class SiteSettingService {
     }
 
     try {
-      const saved = await this.siteSettingRepository.save(siteSetting);
-      const nextLogo = saved.logo ?? null;
-      if (previousLogo && previousLogo !== nextLogo) {
-        this.removeLocalFile(previousLogo);
-      }
-      return saved;
+      // Keep the old logo file when the setting changes so media assets are not removed unexpectedly.
+      return await this.siteSettingRepository.save(siteSetting);
     } catch (error) {
       if (uploadedLogo) {
         this.removeLocalFile(uploadedLogo);
