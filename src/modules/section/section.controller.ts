@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Body,
     Controller,
     Delete,
@@ -68,6 +69,26 @@ export class SectionController {
             createdAt: section.createdAt,
             updatedAt: section.updatedAt,
         }));
+    }
+
+    @Get(":id/posts")
+    async getPublishedPostsBySection(
+        @Param("id", ParseIntPipe) id: number,
+        @Query("page") page?: string,
+        @Query("pageSize") pageSize?: string,
+    ) {
+        const current = this.parsePositiveIntQuery(page, "page") ?? 1;
+        const size = this.parsePositiveIntQuery(pageSize, "pageSize") ?? 20;
+        const { items, total } = await this.sectionService.findPublishedPostsBySection(id, current, size);
+
+        return {
+            success: true,
+            message: "OK",
+            page: current,
+            pageSize: size,
+            total,
+            data: items,
+        };
     }
 
     @Get(":id")
@@ -177,5 +198,18 @@ export class SectionController {
             orderIndex: section.orderIndex,
             enabled: section.enabled,
         };
+    }
+
+    private parsePositiveIntQuery(value: string | undefined, fieldName: string): number | undefined {
+        if (value === undefined || value === "") {
+            return undefined;
+        }
+
+        const parsed = Number(value);
+        if (Number.isInteger(parsed) && parsed > 0) {
+            return parsed;
+        }
+
+        throw new BadRequestException(`${fieldName} must be a positive integer`);
     }
 }

@@ -1,6 +1,6 @@
 import { forwardRef, HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DeepPartial, In } from "typeorm";
+import { Repository, DeepPartial, In, Brackets } from "typeorm";
 import { SectionBlockType, SectionEntity } from "./section.entity";
 import { SectionResponse, SectionBlock, SectionBlockPost } from "./types/section-response-interface";
 import { PageService } from "@/modules/page/page.service";
@@ -184,6 +184,87 @@ export class SectionService {
         }
 
         return await this.createSectionListQuery().getMany();
+    }
+
+    async findPublishedPostsBySection(
+        id: number,
+        page = 1,
+        pageSize = 20,
+    ): Promise<{ items: SectionBlockPost[]; total: number }> {
+        const section = await this.findSectionById(id);
+        const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
+        const current = Math.max(Number(page) || 1, 1);
+        const skip = (current - 1) * take;
+        const categoryIds = Array.from(
+            new Set((section.settings?.categoryIds ?? []).filter((value): value is number => typeof value === 'number')),
+        );
+
+        // A page can have many sections, so keep the page context while resolving category-driven posts.
+        const pageSections = await this.sectionRepository.find({
+            where: { pageId: section.pageId },
+            select: { id: true },
+        });
+        const pageSectionIds = pageSections.map((item) => item.id);
+        const hasDirectSource = this.sectionTypesWithDirectPosts.includes(section.blockType);
+        const hasCategorySource =
+            this.sectionTypesWithCategoryPosts.includes(section.blockType) && categoryIds.length > 0;
+
+        if (!hasDirectSource && !hasCategorySource) {
+            return { items: [], total: 0 };
+        }
+
+        const qb = this.postRepository
+            .createQueryBuilder('post')
+            .distinct(true)
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.category', 'category')
+            .leftJoinAndSelect('post.page', 'page')
+            .leftJoinAndSelect('post.section', 'section')
+            .leftJoinAndSelect('post.sections', 'linkedSections')
+            .where('post.status = :status', { status: PostStatus.Published })
+            .andWhere(
+                new Brackets((sources) => {
+                    if (hasDirectSource) {
+                        // Direct sections own posts through either sectionId or the many-to-many sectionIds list.
+                        sources
+                            .where('section.id = :sectionId', { sectionId: section.id })
+                            .orWhere('linkedSections.id = :sectionId', { sectionId: section.id });
+                    }
+
+                    if (hasCategorySource) {
+                        const categorySource = new Brackets((categoryQuery) => {
+                            categoryQuery
+                                .where('category.id IN (:...categoryIds)', { categoryIds })
+                                .andWhere(
+                                    new Brackets((pageScope) => {
+                                        pageScope.where('page.id = :pageId', { pageId: section.pageId });
+
+                                        if (pageSectionIds.length) {
+                                            pageScope.orWhere('section.id IN (:...pageSectionIds)', { pageSectionIds });
+                                            pageScope.orWhere('linkedSections.id IN (:...pageSectionIds)', { pageSectionIds });
+                                        }
+                                    }),
+                                );
+                        });
+
+                        if (hasDirectSource) {
+                            sources.orWhere(categorySource);
+                        } else {
+                            sources.where(categorySource);
+                        }
+                    }
+                }),
+            )
+            .orderBy('post.publishedAt', 'DESC', 'NULLS LAST')
+            .addOrderBy('post.createdAt', 'DESC')
+            .take(take)
+            .skip(skip);
+
+        const [items, total] = await qb.getManyAndCount();
+        return {
+            items: items.map((post) => this.toPostBlock(post)),
+            total,
+        };
     }
 
     private createSectionListQuery() {
