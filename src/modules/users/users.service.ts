@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { hash } from 'bcrypt';
@@ -14,28 +14,50 @@ import { Action } from '../roles/enums/actions.enum';
 import { Resource } from '../roles/enums/resource.enum';
 import { UpdateRolePermissionsDto } from '../roles/dto/role.dto';
 import { CreateRoleDto } from '../roles/dto/role.dto';
+import { Role } from '@/modules/auth/enums/role.enum';
+import { SYSTEM_SUPER_ADMIN } from './constants/system-users';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnApplicationBootstrap {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly roleService: RoleService,
   ) {}
 
+  async onApplicationBootstrap(): Promise<void> {
+    await this.ensureSystemSuperAdmin();
+  }
+
   async createUser(createUserDto: CreateUserDto): Promise<UserEntity> {
     await this.ensureUniqueCredentials(createUserDto.email, createUserDto.username);
 
-    const newUser = this.userRepository.create(createUserDto);
+    // Public register always creates a normal user role.
+    const newUser = this.userRepository.create({
+      username: createUserDto.username,
+      email: createUserDto.email,
+      password: createUserDto.password,
+      role: Role.User,
+    });
     return await this.userRepository.save(newUser);
   }
 
   async adminCreateUser(dto: AdminCreateUserDto): Promise<UserEntity> {
     await this.ensureUniqueCredentials(dto.email, dto.username);
+
+    if (dto.role === Role.SuperAdmin) {
+      throw new BadRequestException('Super admin account is seeded by the system and cannot be created manually.');
+    }
+
     await this.roleService.ensureRoleIsAssignable(dto.role);
 
     // role slug comes from checkbox UI, so validate before persisting
-    const newUser = this.userRepository.create(dto);
+    const newUser = this.userRepository.create({
+      username: dto.username,
+      email: dto.email,
+      password: dto.password,
+      role: dto.role,
+    });
     return await this.userRepository.save(newUser);
   }
 
@@ -76,19 +98,29 @@ export class UsersService {
 
   async updateUser(userId: number, updateUserDto: UpdateUserDto): Promise<UserEntity> {
     const user = await this.findById(userId);
-    await this.mergeUpdates(user, updateUserDto);
+    await this.mergeUpdates(user, updateUserDto, false);
     return await this.userRepository.save(user);
   }
 
-  async adminUpdateUser(targetUserId: number, updateUserDto: UpdateUserDto): Promise<UserEntity> {
+  async adminUpdateUser(
+    targetUserId: number,
+    updateUserDto: UpdateUserDto,
+  ): Promise<UserEntity> {
     const user = await this.findById(targetUserId);
-    await this.mergeUpdates(user, updateUserDto);
+    if (this.isProtectedSuperAdmin(user)) {
+      throw new BadRequestException('Protected super admin account cannot be edited.');
+    }
+    await this.mergeUpdates(user, updateUserDto, true);
     // after merging, save emits the new role/permissions pair to the DB
     return await this.userRepository.save(user);
   }
 
   async assignPermissionsToUser(userId: number, dto: UpdateRolePermissionsDto): Promise<IUserResponse> {
     const user = await this.findById(userId);
+
+    if (this.isProtectedSuperAdmin(user)) {
+      throw new BadRequestException('Protected super admin permissions cannot be changed.');
+    }
 
     const customRoleSlug = user.role && user.role.startsWith('user-custom-')
       ? user.role
@@ -121,6 +153,9 @@ export class UsersService {
 
   async adminDeleteUser(targetUserId: number): Promise<void> {
     const user = await this.findById(targetUserId);
+    if (this.isProtectedSuperAdmin(user)) {
+      throw new BadRequestException('Protected super admin account cannot be deleted.');
+    }
     await this.userRepository.remove(user);
   }
 
@@ -161,18 +196,31 @@ export class UsersService {
     }
   }
 
-  private async mergeUpdates(user: UserEntity, updateUserDto: UpdateUserDto): Promise<void> {
+  private async mergeUpdates(
+    user: UserEntity,
+    updateUserDto: UpdateUserDto,
+    allowRoleChange: boolean,
+  ): Promise<void> {
     const {
       password: maybeNewPassword,
       role: maybeRole,
       ...rest
     } = updateUserDto as Partial<UpdateUserDto> & { password?: string; role?: string };
 
+    this.assertProtectedSuperAdminUpdate(user, maybeRole);
+
     Object.assign(user, rest);
 
     if (typeof maybeRole === 'string' && maybeRole.trim().length > 0) {
-      await this.roleService.ensureRoleIsAssignable(maybeRole);
-      user.role = maybeRole;
+      if (!allowRoleChange) {
+        throw new BadRequestException('Role cannot be changed from this endpoint.');
+      }
+
+      const nextRole = maybeRole.trim();
+      if (nextRole !== user.role) {
+        await this.roleService.ensureRoleIsAssignable(nextRole);
+        user.role = nextRole;
+      }
       // assigning a new role updates the user checkbox matrix in one step
     }
 
@@ -209,5 +257,75 @@ export class UsersService {
       secret,
       { expiresIn: '7d' },
     );
+  }
+
+  private async ensureSystemSuperAdmin(): Promise<void> {
+    // Keep exactly one reserved super-admin account after rolling back the multi-owner experiment.
+    const existingSuperAdmins = await this.userRepository.find({
+      where: { role: Role.SuperAdmin },
+      order: { id: 'ASC' },
+    });
+
+    if (existingSuperAdmins.length > 1) {
+      const [, ...extraSuperAdmins] = existingSuperAdmins;
+      for (const extraUser of extraSuperAdmins) {
+        extraUser.role = Role.Admin;
+      }
+      await this.userRepository.save(extraSuperAdmins);
+      return;
+    }
+
+    if (existingSuperAdmins.length === 1) {
+      return;
+    }
+
+    const existing = await this.userRepository.findOne({
+      where: { email: SYSTEM_SUPER_ADMIN.email },
+    });
+
+    if (!existing) {
+      // Seed one protected owner account for first-time system access.
+      const user = this.userRepository.create({
+        username: SYSTEM_SUPER_ADMIN.username,
+        email: SYSTEM_SUPER_ADMIN.email,
+        password: SYSTEM_SUPER_ADMIN.password,
+        role: SYSTEM_SUPER_ADMIN.role,
+      });
+      await this.userRepository.save(user);
+      return;
+    }
+
+    let shouldSave = false;
+
+    if (existing.role !== Role.SuperAdmin) {
+      existing.role = Role.SuperAdmin;
+      shouldSave = true;
+    }
+
+    if (!existing.username) {
+      existing.username = SYSTEM_SUPER_ADMIN.username;
+      shouldSave = true;
+    }
+
+    if (shouldSave) {
+      await this.userRepository.save(existing);
+    }
+  }
+
+  private isProtectedSuperAdmin(user: Pick<UserEntity, 'role'> | null | undefined): boolean {
+    return user?.role === Role.SuperAdmin;
+  }
+
+  private assertProtectedSuperAdminUpdate(
+    user: UserEntity,
+    nextRole?: string,
+  ): void {
+    if (!this.isProtectedSuperAdmin(user)) {
+      return;
+    }
+
+    if (typeof nextRole === 'string' && nextRole.trim().toLowerCase() !== Role.SuperAdmin) {
+      throw new BadRequestException('Protected super admin role cannot be changed.');
+    }
   }
 }

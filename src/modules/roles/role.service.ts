@@ -26,6 +26,7 @@ import { PermissionMatrixRow, RolePermissionSummary, RoleSummary } from './types
 import { PermissionRequirement } from './types/permission-requirement.type';
 import { Resource } from './enums/resource.enum';
 import { Action } from './enums/actions.enum';
+import { Role } from '@/modules/auth/enums/role.enum';
 
 @Injectable()
 export class RoleService implements OnModuleInit {
@@ -128,6 +129,10 @@ export class RoleService implements OnModuleInit {
             throw new NotFoundException(`Role '${id}' was not found.`);
         }
 
+        if (this.isProtectedSystemRole(role)) {
+            throw new BadRequestException('Super admin role cannot be modified.');
+        }
+
         const incomingSlug = dto.slug?.toLowerCase();
 
         if (role.isSystem && incomingSlug && incomingSlug !== role.slug) {
@@ -169,6 +174,10 @@ export class RoleService implements OnModuleInit {
             throw new NotFoundException(`Role '${id}' was not found.`);
         }
 
+        if (this.isProtectedSystemRole(role)) {
+            throw new BadRequestException('Super admin role cannot be deleted.');
+        }
+
         if (role.isSystem) {
             throw new BadRequestException('System roles cannot be deleted.');
         }
@@ -182,6 +191,10 @@ export class RoleService implements OnModuleInit {
             throw new NotFoundException(`Role '${id}' was not found.`);
         }
 
+        if (this.isProtectedSystemRole(role)) {
+            throw new BadRequestException('Super admin role permissions cannot be changed.');
+        }
+
         await this.replacePermissions(role.id, dto.permissions);
         return this.getRoleDetail(role.slug);
     }
@@ -191,6 +204,12 @@ export class RoleService implements OnModuleInit {
         if (!role) {
             throw new BadRequestException(`Role '${slug}' does not exist or is inactive.`);
         }
+
+        // Keep one reserved system owner role instead of letting admins assign it manually.
+        if (slug === Role.SuperAdmin) {
+            throw new BadRequestException('Super admin role is reserved for the system account.');
+        }
+
         return role;
     }
 
@@ -299,6 +318,19 @@ export class RoleService implements OnModuleInit {
                     actions: this.sanitizeActions(permission.actions),
                 });
                 await this.rolePermissionRepository.save(created);
+                continue;
+            }
+
+            const nextActions = this.sanitizeActions(permission.actions);
+            const currentActions = this.sanitizeActions(current.actions ?? []);
+            const sameActions =
+                currentActions.length === nextActions.length &&
+                currentActions.every((action, index) => action === nextActions[index]);
+
+            // Keep seeded system roles aligned with the current code permission matrix.
+            if (!sameActions) {
+                current.actions = nextActions;
+                await this.rolePermissionRepository.save(current);
             }
         }
     }
@@ -442,6 +474,10 @@ export class RoleService implements OnModuleInit {
                 }
             }
         }
+    }
+
+    private isProtectedSystemRole(role: RoleEntity): boolean {
+        return role.slug === Role.SuperAdmin;
     }
 
 }

@@ -19,6 +19,27 @@ const fullCrud = [Action.Read, Action.Create, Action.Update, Action.Delete];
 
 export const DEFAULT_ROLE_SEEDS: RoleSeed[] = [
     {
+        slug: Role.SuperAdmin,
+        name: 'Super Admin',
+        description: 'Protected system owner with full access.',
+        isSystem: true,
+        permissions: [
+            { resource: Resource.ActivityLogs, actions: [Action.Read, Action.Delete] },
+            { resource: Resource.Logo, actions: fullCrud },
+            { resource: Resource.SiteSettings, actions: fullCrud },
+            { resource: Resource.Categories, actions: fullCrud },
+            { resource: Resource.Pages, actions: fullCrud },
+            { resource: Resource.Sections, actions: fullCrud },
+            { resource: Resource.Posts, actions: fullCrud },
+            { resource: Resource.WorkingGroups, actions: fullCrud },
+            { resource: Resource.Media, actions: fullCrud },
+            { resource: Resource.Testimonials, actions: fullCrud },
+            { resource: Resource.Menu, actions: fullCrud },
+            { resource: Resource.Users, actions: fullCrud },
+            { resource: Resource.Roles, actions: fullCrud },
+        ],
+    },
+    {
         slug: Role.Admin,
         name: 'Administrator',
         description: 'Full access to manage the application.',

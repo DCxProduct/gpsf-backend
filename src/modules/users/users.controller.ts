@@ -93,7 +93,10 @@ export class UsersController {
   @Permissions({ resource: Resource.Users, actions: [Action.Create] })
   // checkbox combo users.create gives admin the “Create user” button
   @UsePipes(new ValidationPipe())
-  async adminCreateUser(@User() actor: any, @Body('user') dto: AdminCreateUserDto): Promise<IUserResponse> {
+  async adminCreateUser(
+    @User() actor: any,
+    @Body('user') dto: AdminCreateUserDto,
+  ): Promise<IUserResponse> {
     const user = await this.usersService.adminCreateUser(dto);
     const response = await this.usersService.generateUserResponse(user);
     // New user logs point back to the target profile page for the table action menu.
