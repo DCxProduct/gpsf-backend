@@ -21,8 +21,19 @@ interface PopplerContract {
     pdfToCairo(inputFile: string, outputFile: string, options: PdfToCairoOptions): Promise<unknown>;
 }
 
+type SharpLike = typeof import('sharp');
+
 @Injectable()
 export class MediaService {
+    private static readonly IMAGE_COMPRESSION_THRESHOLD_BYTES = 3 * 1024 * 1024;
+    private static readonly IMAGE_TARGET_BYTES = 3 * 1024 * 1024;
+    private static readonly JPEG_QUALITY_STEPS = [90, 85, 80, 75, 70, 65];
+    private static readonly COMPRESSIBLE_IMAGE_TYPES = new Set([
+        'image/png',
+        'image/jpeg',
+        'image/jpg',
+    ]);
+
     constructor(
         private readonly storageService: StorageService,
         @InjectRepository(Media)
@@ -56,21 +67,22 @@ export class MediaService {
         file: Express.Multer.File,
         folder: MediaFolder | null = null,
     ): Promise<MediaResponseInterface> {
-        const {url} = await this.storageService.upload(file, folder?.name ?? undefined);
+        const uploadFile = await this.prepareFileForUpload(file);
+        const {url} = await this.storageService.upload(uploadFile, folder?.name ?? undefined);
         let thumbnailUrl: string | null = null;
 
         try {
-            const mediaType = detectMediaType(file.mimetype);
+            const mediaType = detectMediaType(uploadFile.mimetype);
             thumbnailUrl =
                 mediaType === 'pdf'
                     ? await this.createPdfThumbnail(url)
                     : null;
 
             const media = this.mediaRepo.create({
-                filename: file.originalname,
-                originalName: file.originalname,
-                mimeType: file.mimetype,
-                size: file.size,
+                filename: uploadFile.originalname,
+                originalName: uploadFile.originalname,
+                mimeType: uploadFile.mimetype,
+                size: uploadFile.size,
                 url,
                 thumbnailUrl,
                 mediaType,
@@ -85,6 +97,63 @@ export class MediaService {
             this.removeLocalFile(thumbnailUrl);
             throw error;
         }
+    }
+
+    private async prepareFileForUpload(file: Express.Multer.File): Promise<Express.Multer.File> {
+        if (!this.shouldCompressImage(file)) {
+            return file;
+        }
+
+        const optimizedBuffer = await this.compressImageBuffer(file);
+        if (!optimizedBuffer || optimizedBuffer.length >= file.size) {
+            return file;
+        }
+
+        return {
+            ...file,
+            buffer: optimizedBuffer,
+            size: optimizedBuffer.length,
+        };
+    }
+
+    private shouldCompressImage(file: Express.Multer.File): boolean {
+        const mimeType = String(file.mimetype ?? '').trim().toLowerCase();
+        return (
+            MediaService.COMPRESSIBLE_IMAGE_TYPES.has(mimeType)
+            && Number(file.size ?? 0) > MediaService.IMAGE_COMPRESSION_THRESHOLD_BYTES
+        );
+    }
+
+    private async compressImageBuffer(file: Express.Multer.File): Promise<Buffer | null> {
+        const mimeType = String(file.mimetype ?? '').trim().toLowerCase();
+
+        if (mimeType === 'image/png') {
+            return this.getSharpClient()(file.buffer, { failOn: 'none' })
+                .rotate()
+                // PNG compression is lossless, so pixels stay the same.
+                .png({ compressionLevel: 9, effort: 10, adaptiveFiltering: true })
+                .toBuffer();
+        }
+
+        let smallestBuffer: Buffer | null = null;
+
+        for (const quality of MediaService.JPEG_QUALITY_STEPS) {
+            const candidate = await this.getSharpClient()(file.buffer, { failOn: 'none' })
+                .rotate()
+                // Keep the original dimensions, but use practical JPEG compression settings.
+                .jpeg({ quality, mozjpeg: true })
+                .toBuffer();
+
+            if (!smallestBuffer || candidate.length < smallestBuffer.length) {
+                smallestBuffer = candidate;
+            }
+
+            if (candidate.length <= MediaService.IMAGE_TARGET_BYTES) {
+                return candidate;
+            }
+        }
+
+        return smallestBuffer;
     }
 
     //Get all Media (paginated)
@@ -383,6 +452,16 @@ export class MediaService {
         } catch {
             throw new InternalServerErrorException(
                 "PDF thumbnail requires 'node-poppler'. Install it with `npm install node-poppler` and ensure Poppler is installed on your server.",
+            );
+        }
+    }
+
+    private getSharpClient(): SharpLike {
+        try {
+            return require('sharp') as SharpLike;
+        } catch {
+            throw new InternalServerErrorException(
+                "Image compression requires 'sharp'. Install it with `npm install sharp` on your server.",
             );
         }
     }
