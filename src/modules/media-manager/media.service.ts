@@ -91,7 +91,7 @@ export class MediaService {
                 folder,
             });
 
-            return this.mediaRepo.save(media);
+            return this.normalizeMediaNames(await this.mediaRepo.save(media));
         } catch (error) {
             this.removeLocalFile(url);
             this.removeLocalFile(thumbnailUrl);
@@ -100,17 +100,19 @@ export class MediaService {
     }
 
     private async prepareFileForUpload(file: Express.Multer.File): Promise<Express.Multer.File> {
-        if (!this.shouldCompressImage(file)) {
-            return file;
+        const normalizedFile = this.normalizeUploadFilename(file);
+
+        if (!this.shouldCompressImage(normalizedFile)) {
+            return normalizedFile;
         }
 
-        const optimizedBuffer = await this.compressImageBuffer(file);
-        if (!optimizedBuffer || optimizedBuffer.length >= file.size) {
-            return file;
+        const optimizedBuffer = await this.compressImageBuffer(normalizedFile);
+        if (!optimizedBuffer || optimizedBuffer.length >= normalizedFile.size) {
+            return normalizedFile;
         }
 
         return {
-            ...file,
+            ...normalizedFile,
             buffer: optimizedBuffer,
             size: optimizedBuffer.length,
         };
@@ -189,7 +191,7 @@ export class MediaService {
             page: current,
             pageSize: take,
             total,
-            data: items,
+            data: items.map((item) => this.normalizeMediaNames(item)),
             folders,
         };
     }
@@ -205,7 +207,7 @@ export class MediaService {
             throw new NotFoundException(`Media with ID ${id} not found`);
         }
 
-        return media;
+        return this.normalizeMediaNames(media);
     }
 
     async findByUrl(url: string): Promise<Media | null> {
@@ -247,7 +249,7 @@ export class MediaService {
             page: current,
             pageSize: take,
             total,
-            data: items,
+            data: items.map((item) => this.normalizeMediaNames(item)),
         };
     }
 
@@ -410,6 +412,51 @@ export class MediaService {
             .replace(/[^a-z0-9_-]+/g, '-')
             .replace(/-+/g, '-')
             .replace(/^-+|-+$/g, '');
+    }
+
+    private normalizeUploadFilename(file: Express.Multer.File): Express.Multer.File {
+        // Some browsers/uploads send Khmer filenames with broken encoding.
+        // Fix the display name before we save metadata to the database.
+        const normalizedOriginalName = this.normalizeKhmerFilename(file.originalname);
+        if (normalizedOriginalName === file.originalname) {
+            return file;
+        }
+
+        return {
+            ...file,
+            originalname: normalizedOriginalName,
+        };
+    }
+
+    private normalizeMediaNames<T extends { filename?: string; originalName?: string }>(media: T): T {
+        // Keep API responses readable for both:
+        // 1) new uploads
+        // 2) old rows that were already saved with broken Khmer text
+        if (media.filename !== undefined) {
+            media.filename = this.normalizeKhmerFilename(media.filename);
+        }
+
+        if (media.originalName !== undefined) {
+            media.originalName = this.normalizeKhmerFilename(media.originalName);
+        }
+
+        return media;
+    }
+
+    private normalizeKhmerFilename(value?: string | null): string {
+        const raw = String(value ?? '');
+        if (!raw || this.containsKhmer(raw)) {
+            return raw;
+        }
+
+        // Common mojibake case:
+        // Khmer UTF-8 bytes were read as latin1, so we decode them back to UTF-8.
+        const decoded = Buffer.from(raw, 'latin1').toString('utf8');
+        return this.containsKhmer(decoded) ? decoded : raw;
+    }
+
+    private containsKhmer(value: string): boolean {
+        return /[\u1780-\u17FF]/.test(value);
     }
 
     private async createPdfThumbnail(pdfUrl: string): Promise<string | null> {
