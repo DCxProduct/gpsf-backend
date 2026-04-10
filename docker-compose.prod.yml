@@ -12,10 +12,14 @@ services:
       DB_PORT: 5432
       NODE_ENV: production
       PORT: 3001
+      # Use the container path, not the Ubuntu host path.
+      GOOGLE_ANALYTICS_CREDENTIALS_PATH: /app/analytic/analytic.json
     ports:
       - "127.0.0.1:3001:3001"
     volumes:
       - ./uploads:/app/uploads
+      # Mount the GA service account file read-only into the container.
+      - ./src/modules/analytic/analytic.json:/app/analytic/analytic.json:ro
     depends_on:
       postgres:
         condition: service_healthy

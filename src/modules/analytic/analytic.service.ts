@@ -380,20 +380,7 @@ export class AnalyticService {
       );
     });
 
-    const parsed = JSON.parse(raw) as GoogleServiceAccount;
-
-    if (!parsed.client_email || !parsed.private_key) {
-      throw new HttpException(
-        'Google Analytics credentials file is missing client_email or private_key',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-
-    return {
-      client_email: parsed.client_email,
-      private_key: parsed.private_key,
-      token_uri: parsed.token_uri || AnalyticService.DEFAULT_TOKEN_URI,
-    };
+    return this.parseCredentials(raw, `file: ${credentialsPath}`);
   }
 
   private getCredentialsPath(): string {
@@ -408,6 +395,39 @@ export class AnalyticService {
     }
 
     return configuredPath;
+  }
+
+  private parseCredentials(raw: string, source: string): Required<GoogleServiceAccount> {
+    try {
+      const parsed = JSON.parse(raw) as GoogleServiceAccount;
+      return this.normalizeCredentials(parsed, source);
+    } catch {
+      throw new HttpException(
+        `${source} is not valid JSON`,
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  private normalizeCredentials(
+    credentials: GoogleServiceAccount,
+    source = 'Google Analytics credentials',
+  ): Required<GoogleServiceAccount> {
+    // Private keys from env often contain literal \n, so convert them back to real line breaks.
+    const privateKey = credentials.private_key?.replace(/\\n/g, '\n');
+
+    if (!credentials.client_email || !privateKey) {
+      throw new HttpException(
+        `${source} is missing client_email or private_key`,
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    return {
+      client_email: credentials.client_email,
+      private_key: privateKey,
+      token_uri: credentials.token_uri || AnalyticService.DEFAULT_TOKEN_URI,
+    };
   }
 
   private getPropertyId(): string {
