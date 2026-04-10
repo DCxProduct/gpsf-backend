@@ -19,6 +19,7 @@ import {TestimonialModule} from '@/modules/testimonial/testimonial.module';
 import {WorkingGroupModule} from '@/modules/working-group/working-group.module';
 import {ContactModule} from '@/modules/contact/contact.module';
 import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
+import { AnalyticModule } from '@/modules/analytic/analytic.module';
 
 
 @Module({
@@ -42,6 +43,7 @@ import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module
         WorkingGroupModule,
         ContactModule,
         ActivityLogsModule,
+        AnalyticModule,
 
     ],
     controllers: [AppController],
