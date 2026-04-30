@@ -17,6 +17,7 @@ export enum SectionBlockType {
   ANNUAL_REPORTS = 'annual_reports',
   ISSUES_RESPONSES = 'issues_responses',
   WG_TEMPLATE = 'wg_template',
+  DEFAULT_TEMPLATE = 'default_template',
   STATS = 'stats',
   BENEFITS = 'benefits',
   POST_LIST = 'post_list',
