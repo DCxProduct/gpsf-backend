@@ -15,6 +15,7 @@ type PdfToCairoOptions = {
     singleFile: boolean;
     firstPageToConvert: number;
     lastPageToConvert: number;
+    cropBox?: boolean;
 };
 
 interface PopplerContract {
@@ -482,6 +483,10 @@ export class MediaService {
             singleFile: true,
             firstPageToConvert: 1,
             lastPageToConvert: 1,
+            // Some PDFs are stored as a wide spread in the MediaBox,
+            // but the actual visible page is defined in the CropBox.
+            // Using cropBox gives a thumbnail closer to what users see in PDF viewers.
+            cropBox: true,
         });
 
         if (!fs.existsSync(outputFilePath)) {
