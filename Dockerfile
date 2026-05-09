@@ -7,8 +7,9 @@ RUN npm run build
 
 FROM node:20-alpine
 WORKDIR /app
-# Required by node-poppler at runtime (provides pdftocairo binary)
-RUN apk add --no-cache poppler-utils
+# Required by node-poppler at runtime (provides pdftocairo binary).
+# fontconfig + Khmer fonts are needed so PDF previews can render Khmer text on VPS too.
+RUN apk add --no-cache poppler-utils fontconfig font-noto-khmer
 COPY --from=builder /app/dist ./dist
 COPY package*.json ./
 RUN npm install --omit=dev --legacy-peer-deps
