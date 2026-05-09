@@ -8,8 +8,10 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 # Required by node-poppler at runtime (provides pdftocairo binary).
-# fontconfig + Khmer fonts are needed so PDF previews can render Khmer text on VPS too.
-RUN apk add --no-cache poppler-utils fontconfig font-noto-khmer
+# fontconfig lets Poppler discover installed fonts.
+# font-noto-khmer fixes Khmer previews.
+# ttf-liberation is a closer fallback for Times New Roman / Arial than generic DejaVu.
+RUN apk add --no-cache poppler-utils fontconfig font-noto-khmer ttf-liberation
 COPY --from=builder /app/dist ./dist
 COPY package*.json ./
 RUN npm install --omit=dev --legacy-peer-deps
