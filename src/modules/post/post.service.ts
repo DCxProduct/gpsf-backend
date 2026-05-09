@@ -26,6 +26,10 @@ type PostDocumentInputDto = {
     document?: string | null;
     documentEn?: string | null;
     documentKm?: string | null;
+    clearDocument?: boolean;
+    clearDocumentEn?: boolean;
+    clearDocumentKm?: boolean;
+    clearDocuments?: boolean;
     documents?: {
         en?: DocumentInput;
         km?: DocumentInput;
@@ -439,6 +443,8 @@ export class PostService {
 
         if (coverImageFile?.buffer) {
             post.coverImage = await this.uploadCoverImage(coverImageFile);
+        } else if (dto.clearCoverImage) {
+            post.coverImage = null;
         } else if (dto.coverImage !== undefined) {
             post.coverImage = this.normalizeOptionalString(dto.coverImage);
         }
@@ -606,6 +612,17 @@ export class PostService {
         },
     ): Promise<PostDocuments | null> {
         const next = this.cloneDocuments(currentDocuments);
+
+        if (dto.clearDocuments) {
+            delete next.en;
+            delete next.km;
+        }
+        if (dto.clearDocument || dto.clearDocumentEn) {
+            delete next.en;
+        }
+        if (dto.clearDocumentKm) {
+            delete next.km;
+        }
 
         // Backward-compatible text inputs.
         if (dto.documentEn !== undefined || dto.document !== undefined) {

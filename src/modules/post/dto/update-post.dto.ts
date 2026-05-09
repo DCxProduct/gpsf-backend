@@ -2,6 +2,25 @@ import {IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, I
 import {PostStatus} from '@/modules/post/post.entity';
 import {plainToInstance, Transform, Type} from 'class-transformer';
 
+const toOptionalBoolean = (value: unknown): boolean | undefined => {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') {
+        return true;
+    }
+    if (normalized === 'false' || normalized === '0') {
+        return false;
+    }
+
+    return undefined;
+};
+
 export class LocalizedTitleUpdateDto {
     @IsOptional()
     @IsString()
@@ -222,6 +241,11 @@ export class UpdatePostDto {
     coverImage?: string | null;
 
     @IsOptional()
+    @Transform(({value}) => toOptionalBoolean(value))
+    @IsBoolean()
+    clearCoverImage?: boolean;
+
+    @IsOptional()
     @Transform(({value}) => (value === '' ? null : value))
     @ValidateIf((_, value) => value !== null)
     @IsString()
@@ -241,6 +265,26 @@ export class UpdatePostDto {
     @IsString()
     @MaxLength(500)
     documentKm?: string | null;
+
+    @IsOptional()
+    @Transform(({value}) => toOptionalBoolean(value))
+    @IsBoolean()
+    clearDocument?: boolean;
+
+    @IsOptional()
+    @Transform(({value}) => toOptionalBoolean(value))
+    @IsBoolean()
+    clearDocumentEn?: boolean;
+
+    @IsOptional()
+    @Transform(({value}) => toOptionalBoolean(value))
+    @IsBoolean()
+    clearDocumentKm?: boolean;
+
+    @IsOptional()
+    @Transform(({value}) => toOptionalBoolean(value))
+    @IsBoolean()
+    clearDocuments?: boolean;
 
     @IsOptional()
     @Transform(({value}) => {
