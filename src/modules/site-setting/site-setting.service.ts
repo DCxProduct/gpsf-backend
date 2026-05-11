@@ -195,7 +195,7 @@ export class SiteSettingService {
     const openTimeLines = this.splitLines(openTimeRaw);
 
     const preferredContact = siteSetting.contact?.en ?? siteSetting.contact?.km ?? null;
-    const phones = this.uniqueStrings(preferredContact?.phones ?? []);
+    const phones = this.cleanStrings(preferredContact?.phones ?? []);
     const desks = this.buildPanelDesks(preferredContact?.desks ?? []);
     const links = this.normalizeSocialLinks(siteSetting.socialLinks) ?? [];
 
@@ -283,7 +283,7 @@ export class SiteSettingService {
       return null;
     }
 
-    const phones = this.uniqueStrings(value.phones ?? []);
+    const phones = this.cleanStrings(value.phones ?? []);
     const desks = (value.desks ?? [])
       .map((desk, index) => {
         const title = this.normalizeText(desk?.title) ?? `Desk ${index + 1}`;
@@ -343,6 +343,12 @@ export class SiteSettingService {
       }
     }
     return Array.from(set);
+  }
+
+  private cleanStrings(values: Array<string | null | undefined>): string[] {
+    return values
+      .map((value) => this.normalizeText(value))
+      .filter((value): value is string => Boolean(value));
   }
 
   private splitLines(value?: string | null): string[] {
