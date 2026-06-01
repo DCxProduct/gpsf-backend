@@ -50,6 +50,9 @@ export class PostController {
     @Query('sectionId') sectionId?: string,
     @Query('categoryId') categoryId?: string,
     @Query('dateRange') dateRange?: string,
+    @Query('workingGroupIds') workingGroupIds?: string,
+    @Query('hasWorkingGroup') hasWorkingGroup?: string,
+    @Query('hasDocument') hasDocument?: string,
   ) {
     const current = Math.max(Number(page) || 1, 1);
     const size = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
@@ -57,6 +60,9 @@ export class PostController {
     const pageFilter = this.parsePositiveIntQuery(pageId, 'pageId');
     const sectionFilter = this.parsePositiveIntQuery(sectionId, 'sectionId');
     const categoryFilter = this.parsePositiveIntQuery(categoryId, 'categoryId');
+    const workingGroupFilter = this.parsePositiveIntListQuery(workingGroupIds, 'workingGroupIds');
+    const hasWorkingGroupFilter = this.parseBooleanQuery(hasWorkingGroup, 'hasWorkingGroup');
+    const hasDocumentFilter = this.parseBooleanQuery(hasDocument, 'hasDocument');
     const { items, total } = await this.postService.findAll(
       current,
       size,
@@ -66,6 +72,9 @@ export class PostController {
       sectionFilter,
       categoryFilter,
       dateRange,
+      workingGroupFilter,
+      hasWorkingGroupFilter,
+      hasDocumentFilter,
     );
     const data = items.map((post) => this.toPostResponse(post));
     return {
@@ -287,6 +296,26 @@ export class PostController {
     throw new BadRequestException(`${fieldName} must be a positive integer`);
   }
 
+  /**
+   * Parse a comma-separated list of positive integers (e.g. "1,2,3").
+   * Returns undefined when empty so the service can skip the filter.
+   */
+  private parsePositiveIntListQuery(value: string | undefined, fieldName: string): number[] | undefined {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    const parts = String(value).split(',').map((part) => part.trim()).filter(Boolean);
+    if (parts.length === 0) return undefined;
+
+    const parsed = parts.map((part) => Number(part));
+    const valid = parsed.filter((num) => Number.isInteger(num) && num > 0);
+
+    if (valid.length !== parsed.length) {
+      throw new BadRequestException(`${fieldName} must be a comma-separated list of positive integers`);
+    }
+    return valid;
+  }
+
   private toPostResponse(post: PostEntity) {
     const documents = post.documents ?? null;
     const documentEn = documents?.en ?? null;
@@ -330,6 +359,10 @@ export class PostController {
           blockType: section.blockType,
           title: section.title,
         })) ?? [],
+      workingGroupId: post.workingGroupId ?? post.workingGroup?.id ?? null,
+      workingGroup: post.workingGroup
+        ? { id: post.workingGroup.id, title: post.workingGroup.title }
+        : null,
     };
   }
 
@@ -355,6 +388,7 @@ export class PostController {
       pageId: post.page?.id ?? null,
       sectionId: post.section?.id ?? post.sectionId ?? null,
       sectionIds: post.sections?.map((section) => section.id) ?? [],
+      workingGroupId: post.workingGroup?.id ?? post.workingGroupId ?? null,
     };
   }
 }

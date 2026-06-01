@@ -1,7 +1,7 @@
 import { forwardRef, HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DeepPartial, In, Brackets } from "typeorm";
-import { SectionBlockType, SectionEntity } from "./section.entity";
+import { SectionBlockType, SectionEntity, SectionSettings } from "./section.entity";
 import { SectionResponse, SectionBlock, SectionBlockPost } from "./types/section-response-interface";
 import { PageService } from "@/modules/page/page.service";
 import { CreateSectionDto } from "./dto/create-section.dto";
@@ -36,6 +36,39 @@ export class SectionService {
         SectionBlockType.POST_LIST,
         SectionBlockType.ANNOUNCEMENT,
     ];
+
+    // Sort a section's posts in place according to settings.sort.
+    // "latest"  → newest publishedAt first (fallback to createdAt).
+    // "manual"  → featured posts first, then newest. (We don't store an explicit
+    //             postIds order yet, so this is the best stand-in.)
+    private sortSectionPosts(
+        posts: SectionBlockPost[],
+        sort?: SectionSettings['sort'],
+    ): SectionBlockPost[] {
+        const toTime = (value?: Date | string | null) => {
+            if (!value) return 0;
+            const t = new Date(value).getTime();
+            return Number.isFinite(t) ? t : 0;
+        };
+
+        if (sort === 'manual') {
+            return [...posts].sort((a, b) => {
+                const featA = a.isFeatured ? 1 : 0;
+                const featB = b.isFeatured ? 1 : 0;
+                if (featA !== featB) return featB - featA;
+                const dateDiff = toTime(b.publishedAt) - toTime(a.publishedAt);
+                if (dateDiff !== 0) return dateDiff;
+                return toTime(b.createdAt) - toTime(a.createdAt);
+            });
+        }
+
+        // 'latest' or undefined → newest first
+        return [...posts].sort((a, b) => {
+            const dateDiff = toTime(b.publishedAt) - toTime(a.publishedAt);
+            if (dateDiff !== 0) return dateDiff;
+            return toTime(b.createdAt) - toTime(a.createdAt);
+        });
+    }
 
     async getSectionsForPage(pageIdentifier: string, includeDrafts = false, includePosts = false): Promise<SectionResponse> {
         const safeIdentifier = pageIdentifier?.trim();
@@ -127,11 +160,13 @@ export class SectionService {
 
                 const isCategoryDriven = this.sectionTypesWithCategoryPosts.includes(section.blockType);
                 const categoryIds = section.settings?.categoryIds ?? [];
+                const sortMode = section.settings?.sort;
                 if (isCategoryDriven && categoryIds.length) {
                     const merged = categoryIds.flatMap((id) => postsByCategoryId.get(id) ?? []);
                     const unique = new Map<number, SectionBlockPost>();
                     merged.forEach((post) => unique.set(post.id, post));
-                    let posts = Array.from(unique.values());
+                    // Sort per the section's setting BEFORE limit so the limit picks the right N.
+                    let posts = this.sortSectionPosts(Array.from(unique.values()), sortMode);
                     const limit = section.settings?.limit;
                     if (typeof limit === "number" && limit > 0) {
                         posts = posts.slice(0, limit);
@@ -142,7 +177,10 @@ export class SectionService {
 
                 if (section.blockType !== SectionBlockType.POST_LIST) {
                     if (this.sectionTypesWithDirectPosts.includes(section.blockType)) {
-                        block.posts = postsBySectionId.get(section.id) ?? [];
+                        block.posts = this.sortSectionPosts(
+                            postsBySectionId.get(section.id) ?? [],
+                            sortMode,
+                        );
                         return block;
                     }
                     block.posts = [];
@@ -157,7 +195,7 @@ export class SectionService {
                 const merged = categoryIds.flatMap((id) => postsByCategoryId.get(id) ?? []);
                 const unique = new Map<number, SectionBlockPost>();
                 merged.forEach((post) => unique.set(post.id, post));
-                let posts = Array.from(unique.values());
+                let posts = this.sortSectionPosts(Array.from(unique.values()), sortMode);
                 const limit = section.settings?.limit;
                 if (typeof limit === "number" && limit > 0) {
                     posts = posts.slice(0, limit);
@@ -193,19 +231,15 @@ export class SectionService {
         pageSize = 20,
     ): Promise<{ items: SectionBlockPost[]; total: number }> {
         const section = await this.findSectionById(id);
-        const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
+        // Cap at 100 — high enough for "see more" pages on the public site without
+        // requiring pagination work, low enough to keep response payloads sane.
+        const take = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
         const current = Math.max(Number(page) || 1, 1);
         const skip = (current - 1) * take;
         const categoryIds = Array.from(
             new Set((section.settings?.categoryIds ?? []).filter((value): value is number => typeof value === 'number')),
         );
 
-        // A page can have many sections, so keep the page context while resolving category-driven posts.
-        const pageSections = await this.sectionRepository.find({
-            where: { pageId: section.pageId },
-            select: { id: true },
-        });
-        const pageSectionIds = pageSections.map((item) => item.id);
         const hasDirectSource = this.sectionTypesWithDirectPosts.includes(section.blockType);
         const hasCategorySource =
             this.sectionTypesWithCategoryPosts.includes(section.blockType) && categoryIds.length > 0;
@@ -233,19 +267,13 @@ export class SectionService {
                     }
 
                     if (hasCategorySource) {
+                        // Pure category match across all pages. The previous version
+                        // additionally required the post to be on this section's page
+                        // (or its sections), which broke aggregator sections like
+                        // "News & Updates" that want to surface WG news posts living
+                        // on individual WG pages.
                         const categorySource = new Brackets((categoryQuery) => {
-                            categoryQuery
-                                .where('category.id IN (:...categoryIds)', { categoryIds })
-                                .andWhere(
-                                    new Brackets((pageScope) => {
-                                        pageScope.where('page.id = :pageId', { pageId: section.pageId });
-
-                                        if (pageSectionIds.length) {
-                                            pageScope.orWhere('section.id IN (:...pageSectionIds)', { pageSectionIds });
-                                            pageScope.orWhere('linkedSections.id IN (:...pageSectionIds)', { pageSectionIds });
-                                        }
-                                    }),
-                                );
+                            categoryQuery.where('category.id IN (:...categoryIds)', { categoryIds });
                         });
 
                         if (hasDirectSource) {
@@ -256,10 +284,20 @@ export class SectionService {
                     }
                 }),
             )
-            .orderBy('post.publishedAt', 'DESC', 'NULLS LAST')
-            .addOrderBy('post.createdAt', 'DESC')
             .take(take)
             .skip(skip);
+
+        // Honor section.settings.sort. "manual" surfaces featured posts first
+        // (we have no postIds array for true manual ordering), then falls back to newest.
+        const sortMode = section.settings?.sort ?? 'latest';
+        if (sortMode === 'manual') {
+            qb.orderBy('post.isFeatured', 'DESC')
+                .addOrderBy('post.publishedAt', 'DESC', 'NULLS LAST')
+                .addOrderBy('post.createdAt', 'DESC');
+        } else {
+            qb.orderBy('post.publishedAt', 'DESC', 'NULLS LAST')
+                .addOrderBy('post.createdAt', 'DESC');
+        }
 
         const [items, total] = await qb.getManyAndCount();
         return {

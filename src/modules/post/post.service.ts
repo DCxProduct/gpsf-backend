@@ -9,6 +9,7 @@ import {UserEntity} from '@/modules/users/entities/user.entity';
 import {CategoryEntity} from '@/modules/category/category.entity';
 import {PageEntity} from '@/modules/page/page.entity';
 import {SectionEntity} from '@/modules/section/section.entity';
+import {WorkingGroupEntity} from '@/modules/working-group/working-group.entity';
 import type {UploadedFilePayload} from '@/types/uploaded-file.type';
 import {MediaService} from '@/modules/media-manager/media.service';
 import type {MediaResponseInterface} from '@/modules/media-manager/types/media-response-interface';
@@ -47,6 +48,8 @@ export class PostService {
         private readonly pageRepository: Repository<PageEntity>,
         @InjectRepository(SectionEntity)
         private readonly sectionRepository: Repository<SectionEntity>,
+        @InjectRepository(WorkingGroupEntity)
+        private readonly workingGroupRepository: Repository<WorkingGroupEntity>,
         private readonly mediaService: MediaService,
     ) {
     }
@@ -114,6 +117,15 @@ export class PostService {
             newPost.page = page;
         }
 
+        if (dto.workingGroupId) {
+            const workingGroup = await this.workingGroupRepository.findOne({where: {id: dto.workingGroupId}});
+            if (!workingGroup) {
+                throw new HttpException('Working group not found', HttpStatus.UNPROCESSABLE_ENTITY);
+            }
+            newPost.workingGroup = workingGroup;
+            newPost.workingGroupId = workingGroup.id;
+        }
+
         if (dto.sectionId !== undefined) {
             if (dto.sectionId === null as any) {
                 newPost.section = null;
@@ -173,6 +185,9 @@ export class PostService {
         sectionId?: number,
         categoryId?: number,
         dateRange?: string,
+        workingGroupIds?: number[],
+        hasWorkingGroup?: boolean,
+        hasDocument?: boolean,
     ): Promise<{ items: PostEntity[]; total: number }> {
         const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
         const current = Math.max(Number(page) || 1, 1);
@@ -186,6 +201,7 @@ export class PostService {
             .leftJoinAndSelect('post.page', 'page')
             .leftJoinAndSelect('post.sections', 'sections')
             .leftJoinAndSelect('post.section', 'section')
+            .leftJoinAndSelect('post.workingGroup', 'workingGroup')
             .orderBy('post.createdAt', 'DESC')
             .take(take)
             .skip(skip);
@@ -228,6 +244,38 @@ export class PostService {
             qb.andWhere('category.id = :categoryId', { categoryId });
         }
 
+        if (workingGroupIds && workingGroupIds.length > 0) {
+            // workingGroup.id IN (...) — multi-select WG filter from the Documents page.
+            qb.andWhere('workingGroup.id IN (:...workingGroupIds)', { workingGroupIds });
+        }
+
+        if (hasWorkingGroup === true) {
+            // "Any WG" filter — drives the News & Updates page showing all WG-tagged posts.
+            qb.andWhere('post.workingGroupId IS NOT NULL');
+        } else if (hasWorkingGroup === false) {
+            // Opposite: site-wide posts only (no WG tag).
+            qb.andWhere('post.workingGroupId IS NULL');
+        }
+
+        if (hasDocument === true) {
+            // "Has a document file" — drives the Publication page so any post with
+            // a PDF (regardless of which page/section it lives on) appears in the
+            // Documents list. We check both English and Khmer document URLs.
+            qb.andWhere(
+                `(
+                    (post.documents -> 'en' ->> 'url') IS NOT NULL
+                    OR (post.documents -> 'km' ->> 'url') IS NOT NULL
+                )`,
+            );
+        } else if (hasDocument === false) {
+            qb.andWhere(
+                `(
+                    (post.documents -> 'en' ->> 'url') IS NULL
+                    AND (post.documents -> 'km' ->> 'url') IS NULL
+                )`,
+            );
+        }
+
         const parsedDateRange = this.parseDateRange(dateRange);
         if (parsedDateRange) {
             qb.andWhere('post.publishedAt BETWEEN :dateFrom AND :dateTo', {
@@ -252,6 +300,7 @@ export class PostService {
             .leftJoinAndSelect('post.page', 'page')
             .leftJoinAndSelect('post.sections', 'sections')
             .leftJoinAndSelect('post.section', 'section')
+            .leftJoinAndSelect('post.workingGroup', 'workingGroup')
             .orderBy('post.createdAt', 'DESC');
 
         if (isFeatured !== undefined) {
@@ -281,7 +330,7 @@ export class PostService {
         const posts = await this.postRepository.find({
             where,
             order: {createdAt: 'DESC'},
-            relations: ['author', 'category', 'page', 'sections', 'section'],
+            relations: ['author', 'category', 'page', 'sections', 'section', 'workingGroup'],
         });
 
         return posts;
@@ -290,7 +339,7 @@ export class PostService {
     async findOne(id: number): Promise<PostEntity> {
         const post = await this.postRepository.findOne({
             where: {id},
-            relations: ['author', 'category', 'page', 'sections', 'section'],
+            relations: ['author', 'category', 'page', 'sections', 'section', 'workingGroup'],
         });
         if (!post) {
             throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
@@ -306,7 +355,7 @@ export class PostService {
 
         const post = await this.postRepository.findOne({
             where: { slug: normalizedSlug },
-            relations: ['author', 'category', 'page', 'sections', 'section'],
+            relations: ['author', 'category', 'page', 'sections', 'section', 'workingGroup'],
         });
         if (!post) {
             throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
@@ -391,10 +440,11 @@ export class PostService {
         this.assertDateRange(post.publishedAt ?? null, post.expiredAt ?? null);
 
         if (dto.categoryId !== undefined) {
-            if (dto.categoryId === null as any) {
+            if (dto.categoryId === null) {
                 post.category = null;
             } else {
-                const category = await this.categoryRepository.findOne({where: {id: dto.categoryId}});
+                const categoryId = dto.categoryId;
+                const category = await this.categoryRepository.findOne({where: {id: categoryId}});
                 if (!category) {
                     throw new HttpException('Category not found', HttpStatus.UNPROCESSABLE_ENTITY);
                 }
@@ -403,10 +453,11 @@ export class PostService {
         }
 
         if (dto.pageId !== undefined) {
-            if (dto.pageId === null as any) {
+            if (dto.pageId === null) {
                 post.page = null;
             } else {
-                const page = await this.pageRepository.findOne({where: {id: dto.pageId}});
+                const pageId = dto.pageId;
+                const page = await this.pageRepository.findOne({where: {id: pageId}});
                 if (!page) {
                     throw new HttpException('Page not found', HttpStatus.UNPROCESSABLE_ENTITY);
                 }
@@ -415,16 +466,32 @@ export class PostService {
         }
 
         if (dto.sectionId !== undefined) {
-            if (dto.sectionId === null as any) {
+            if (dto.sectionId === null) {
                 post.section = null;
                 post.sectionId = null;
             } else {
-                const section = await this.sectionRepository.findOne({where: {id: dto.sectionId}});
+                const sectionId = dto.sectionId;
+                const section = await this.sectionRepository.findOne({where: {id: sectionId}});
                 if (!section) {
                     throw new HttpException('Section not found', HttpStatus.UNPROCESSABLE_ENTITY);
                 }
                 post.section = section;
                 post.sectionId = section.id;
+            }
+        }
+
+        if (dto.workingGroupId !== undefined) {
+            if (dto.workingGroupId === null) {
+                post.workingGroup = null;
+                post.workingGroupId = null;
+            } else {
+                const workingGroupId = dto.workingGroupId;
+                const workingGroup = await this.workingGroupRepository.findOne({where: {id: workingGroupId}});
+                if (!workingGroup) {
+                    throw new HttpException('Working group not found', HttpStatus.UNPROCESSABLE_ENTITY);
+                }
+                post.workingGroup = workingGroup;
+                post.workingGroupId = workingGroup.id;
             }
         }
 

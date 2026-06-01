@@ -176,6 +176,17 @@ export class CreatePostDto {
     sectionIds?: number[];
 
     @IsOptional()
+    @Transform(({ value }) => {
+        if (value === undefined || value === '' || value === null) return undefined;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : value;
+    })
+    @IsInt()
+    @Min(1)
+    @Max(2147483647)
+    workingGroupId?: number;
+
+    @IsOptional()
     @IsEnum(PostStatus)
     status?: PostStatus;
 

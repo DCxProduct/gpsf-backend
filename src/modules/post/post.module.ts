@@ -7,11 +7,12 @@ import { CategoryEntity } from '@/modules/category/category.entity';
 import { PageEntity } from '@/modules/page/page.entity';
 import { RoleModule } from '@/modules/roles/role.module';
 import { SectionEntity } from '@/modules/section/section.entity';
+import { WorkingGroupEntity } from '@/modules/working-group/working-group.entity';
 import { MediaModule } from '@/modules/media-manager/media.module';
 import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PostEntity, CategoryEntity, PageEntity, SectionEntity]), RoleModule, MediaModule, ActivityLogsModule],
+  imports: [TypeOrmModule.forFeature([PostEntity, CategoryEntity, PageEntity, SectionEntity, WorkingGroupEntity]), RoleModule, MediaModule, ActivityLogsModule],
   controllers: [PostController],
   providers: [PostService],
   exports: [PostService],

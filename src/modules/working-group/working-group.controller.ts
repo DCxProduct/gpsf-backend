@@ -42,15 +42,25 @@ export class WorkingGroupController {
   ) {
     const normalizedLang = this.normalizeLang(lang);
     const normalizedPageId = this.parsePageId(pageId);
-    const { items, total } = await this.workingGroupService.findAll(status, normalizedPageId);
+    const { items, total } = await this.workingGroupService.findAll(
+      status,
+      normalizedPageId,
+    );
     return {
       total,
       items: items.map((item) => this.toResponse(item, normalizedLang)),
     };
   }
+  @Get(':id/post-targets')
+  async findPostTargets(@Param('id', ParseIntPipe) id: number) {
+    return this.workingGroupService.getPostTargets(id);
+  }
 
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number, @Query('lang') lang?: string) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('lang') lang?: string,
+  ) {
     const normalizedLang = this.normalizeLang(lang);
     const item = await this.workingGroupService.findOne(id);
     return this.toResponse(item, normalizedLang);
@@ -59,7 +69,13 @@ export class WorkingGroupController {
   @Post()
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.WorkingGroups, actions: [Action.Create] })
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
   async create(@User() user: UserEntity, @Body() dto: CreateWorkingGroupDto) {
     const item = await this.workingGroupService.create(user, dto);
     // Log after save so the entry already has its final id and page link.
@@ -82,8 +98,18 @@ export class WorkingGroupController {
   @Put(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.WorkingGroups, actions: [Action.Update] })
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-  async update(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateWorkingGroupDto) {
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
+  async update(
+    @User() user: UserEntity,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateWorkingGroupDto,
+  ) {
     // Capture old values first for the activity detail modal.
     const before = await this.workingGroupService.findOne(id);
     const item = await this.workingGroupService.update(id, dto);
@@ -99,7 +125,10 @@ export class WorkingGroupController {
         label: this.toLabel(item),
         url: `/working-groups/${item.id}`,
       },
-      changes: this.activityLogsService.buildChanges(this.toLogSnapshot(before), this.toLogSnapshot(item)),
+      changes: this.activityLogsService.buildChanges(
+        this.toLogSnapshot(before),
+        this.toLogSnapshot(item),
+      ),
     });
     return this.toResponse(item);
   }
@@ -107,7 +136,10 @@ export class WorkingGroupController {
   @Delete(':id')
   @UseGuards(AuthGuard, PermissionsGuard)
   @Permissions({ resource: Resource.WorkingGroups, actions: [Action.Delete] })
-  async remove(@User() user: UserEntity, @Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @User() user: UserEntity,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     // Read label before delete so the log row stays human-readable.
     const item = await this.workingGroupService.findOne(id);
     await this.workingGroupService.remove(id);
@@ -148,10 +180,9 @@ export class WorkingGroupController {
     return undefined;
   }
 
-  private pickLocalized<T extends { en?: string; km?: string } | null | undefined>(
-    value: T,
-    lang?: 'en' | 'km',
-  ) {
+  private pickLocalized<
+    T extends { en?: string; km?: string } | null | undefined,
+  >(value: T, lang?: 'en' | 'km') {
     if (!lang) {
       return value ?? null;
     }
@@ -190,7 +221,11 @@ export class WorkingGroupController {
   }
 
   private toLabel(item: WorkingGroupEntity): string {
-    return item.title?.en?.trim() || item.title?.km?.trim() || `Working group ${item.id}`;
+    return (
+      item.title?.en?.trim() ||
+      item.title?.km?.trim() ||
+      `Working group ${item.id}`
+    );
   }
 
   private toLogSnapshot(item: WorkingGroupEntity): Record<string, unknown> {

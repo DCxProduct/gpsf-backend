@@ -4,8 +4,11 @@ import { FindManyOptions, Repository } from 'typeorm';
 import { WorkingGroupEntity, WorkingGroupStatus } from './working-group.entity';
 import { CreateWorkingGroupDto } from './dto/create-working-group.dto';
 import { UpdateWorkingGroupDto } from './dto/update-working-group.dto';
+import { PostTargetsResponseDto } from './dto/post-targets-response.dto';
 import { UserEntity } from '@/modules/users/entities/user.entity';
 import { PageEntity } from '@/modules/page/page.entity';
+import { SectionService } from '@/modules/section/section.service';
+import { SectionBlockType } from '@/modules/section/section.entity';
 
 @Injectable()
 export class WorkingGroupService {
@@ -14,6 +17,7 @@ export class WorkingGroupService {
     private readonly workingGroupRepository: Repository<WorkingGroupEntity>,
     @InjectRepository(PageEntity)
     private readonly pageRepository: Repository<PageEntity>,
+    private readonly sectionService: SectionService,
   ) {}
 
   async findAll(
@@ -36,7 +40,8 @@ export class WorkingGroupService {
       options.where = where;
     }
 
-    const [items, total] = await this.workingGroupRepository.findAndCount(options);
+    const [items, total] =
+      await this.workingGroupRepository.findAndCount(options);
     return { items, total };
   }
 
@@ -53,7 +58,10 @@ export class WorkingGroupService {
     return workingGroup;
   }
 
-  async create(user: UserEntity, dto: CreateWorkingGroupDto): Promise<WorkingGroupEntity> {
+  async create(
+    user: UserEntity,
+    dto: CreateWorkingGroupDto,
+  ): Promise<WorkingGroupEntity> {
     if (!dto.title?.en?.trim()) {
       throw new HttpException('Title en is required', HttpStatus.BAD_REQUEST);
     }
@@ -77,7 +85,10 @@ export class WorkingGroupService {
     return this.workingGroupRepository.save(workingGroup);
   }
 
-  async update(id: number, dto: UpdateWorkingGroupDto): Promise<WorkingGroupEntity> {
+  async update(
+    id: number,
+    dto: UpdateWorkingGroupDto,
+  ): Promise<WorkingGroupEntity> {
     const workingGroup = await this.findOne(id);
 
     if (dto.title !== undefined) {
@@ -100,8 +111,12 @@ export class WorkingGroupService {
           ...dto.description,
         };
         const normalizedDescription = {
-          ...(mergedDescription.en !== undefined ? { en: mergedDescription.en } : {}),
-          ...(mergedDescription.km !== undefined ? { km: mergedDescription.km } : {}),
+          ...(mergedDescription.en !== undefined
+            ? { en: mergedDescription.en }
+            : {}),
+          ...(mergedDescription.km !== undefined
+            ? { km: mergedDescription.km }
+            : {}),
         };
         workingGroup.description = Object.keys(normalizedDescription).length
           ? normalizedDescription
@@ -135,6 +150,47 @@ export class WorkingGroupService {
 
     return this.workingGroupRepository.save(workingGroup);
   }
+  async getPostTargets(id: number): Promise<PostTargetsResponseDto> {
+    const workingGroup = await this.findOne(id);
+
+    if (!workingGroup.pageId || !workingGroup.page) {
+      return {
+        workingGroupId: workingGroup.id,
+        pageId: null,
+        page: null,
+        sections: [],
+      };
+    }
+
+    const sections = await this.sectionService.listSections(
+      workingGroup.pageId,
+    );
+    // Only sections that *actually belong* to this WG's page can target posts;
+    // listSections falls back to all sections when the page has none, so filter explicitly.
+    const postListSections = sections.filter(
+      (section) =>
+        section.pageId === workingGroup.pageId &&
+        section.blockType === SectionBlockType.POST_LIST,
+    );
+
+    return {
+      workingGroupId: workingGroup.id,
+      pageId: workingGroup.pageId,
+      page: {
+        id: workingGroup.page.id,
+        title: workingGroup.page.title,
+        slug: workingGroup.page.slug,
+      },
+      sections: postListSections.map((section) => ({
+        id: section.id,
+        title: section.title,
+        blockType: section.blockType,
+        allowedCategoryIds: (section.settings?.categoryIds ?? []).filter(
+          (value): value is number => typeof value === 'number',
+        ),
+      })),
+    };
+  }
 
   async remove(id: number): Promise<void> {
     const workingGroup = await this.findOne(id);
@@ -144,13 +200,21 @@ export class WorkingGroupService {
   private async getPageOrFail(pageId: number): Promise<PageEntity> {
     const page = await this.pageRepository.findOne({ where: { id: pageId } });
     if (!page) {
-      throw new HttpException('Page not found', HttpStatus.UNPROCESSABLE_ENTITY);
+      throw new HttpException(
+        'Page not found',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
     return page;
   }
 
-  private async ensurePageIsAvailable(pageId: number, currentWorkingGroupId?: number): Promise<void> {
-    const existing = await this.workingGroupRepository.findOne({ where: { pageId } });
+  private async ensurePageIsAvailable(
+    pageId: number,
+    currentWorkingGroupId?: number,
+  ): Promise<void> {
+    const existing = await this.workingGroupRepository.findOne({
+      where: { pageId },
+    });
     if (existing && existing.id !== currentWorkingGroupId) {
       throw new HttpException(
         'This page is already linked to another working group',

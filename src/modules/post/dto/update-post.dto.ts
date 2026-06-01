@@ -153,29 +153,61 @@ export class UpdatePostDto {
     @Type(() => LocalizedDescriptionUpdateDto)
     description?: LocalizedDescriptionUpdateDto | null;
 
+    // Empty-string from multipart/form-data means the author explicitly cleared the field.
+    // We do the string→number coercion inside @Transform because @Type(() => Number)
+    // would turn null into 0 (Number(null) === 0) and fail @Min(1) validation.
     @IsOptional()
-    @Transform(({value}) => (value === '' ? undefined : value))
-    @Type(() => Number)
+    @Transform(({ value }) => {
+        if (value === undefined) return undefined;
+        if (value === '' || value === null) return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : value;
+    })
+    @ValidateIf((_, value) => value !== null)
     @IsInt()
     @Min(1)
     @Max(2147483647)
-    categoryId?: number;
+    categoryId?: number | null;
 
     @IsOptional()
-    @Transform(({value}) => (value === '' ? undefined : value))
-    @Type(() => Number)
+    @Transform(({ value }) => {
+        if (value === undefined) return undefined;
+        if (value === '' || value === null) return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : value;
+    })
+    @ValidateIf((_, value) => value !== null)
     @IsInt()
     @Min(1)
     @Max(2147483647)
-    pageId?: number;
+    pageId?: number | null;
 
     @IsOptional()
-    @Transform(({value}) => (value === '' ? undefined : value))
-    @Type(() => Number)
+    @Transform(({ value }) => {
+        if (value === undefined) return undefined;
+        if (value === '' || value === null) return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : value;
+    })
+    @ValidateIf((_, value) => value !== null)
     @IsInt()
     @Min(1)
     @Max(2147483647)
-    sectionId?: number;
+    sectionId?: number | null;
+
+    // Same '' -> null pattern as the other foreign keys: '' means "clear it".
+    @IsOptional()
+    @Transform(({ value }) => {
+        if (value === undefined) return undefined;
+        if (value === '' || value === null) return null;
+        const n = Number(value);
+        return Number.isFinite(n) ? n : value;
+    })
+    @ValidateIf((_, value) => value !== null)
+    @IsInt()
+    @Min(1)
+    @Max(2147483647)
+    workingGroupId?: number | null;
 
     @IsOptional()
     @IsEnum(PostStatus)

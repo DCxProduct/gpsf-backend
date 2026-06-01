@@ -6,9 +6,15 @@ import { WorkingGroupController } from './working-group.controller';
 import { PageEntity } from '@/modules/page/page.entity';
 import { RoleModule } from '@/modules/roles/role.module';
 import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
+import { SectionModule } from '@/modules/section/section.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkingGroupEntity, PageEntity]), RoleModule, ActivityLogsModule],
+  imports: [
+    TypeOrmModule.forFeature([WorkingGroupEntity, PageEntity]),
+    RoleModule,
+    ActivityLogsModule,
+    SectionModule,
+  ],
   controllers: [WorkingGroupController],
   providers: [WorkingGroupService],
   exports: [WorkingGroupService],

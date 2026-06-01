@@ -14,6 +14,7 @@ import { UserEntity } from '@/modules/users/entities/user.entity';
 import { CategoryEntity } from '@/modules/category/category.entity';
 import { PageEntity } from '@/modules/page/page.entity';
 import { SectionEntity } from '@/modules/section/section.entity';
+import { WorkingGroupEntity } from '@/modules/working-group/working-group.entity';
 
 export enum PostStatus {
     Draft = 'draft',
@@ -89,6 +90,15 @@ export class PostEntity {
     @ManyToMany(() => SectionEntity, (section) => section.posts)
     @JoinTable({ name: 'post_sections' })
     sections?: SectionEntity[];
+
+    // Which Working Group this post belongs to (optional, nullable).
+    // Powers per-WG filtering on public pages (WG news strip, Documents filter).
+    @Column({ type: 'int', nullable: true })
+    workingGroupId?: number | null;
+
+    @ManyToOne(() => WorkingGroupEntity, { nullable: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'workingGroupId' })
+    workingGroup?: WorkingGroupEntity | null;
 
     @CreateDateColumn({ type: 'timestamp' })
     createdAt: Date;
