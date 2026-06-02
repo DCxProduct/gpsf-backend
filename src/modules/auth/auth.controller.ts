@@ -177,12 +177,26 @@ export class AuthController {
   }
 
   private attachAuthCookies(res: Response, response: IUserResponse): void {
+    // Cookie maxAge must match the JWT TTL or the browser will drop the cookie
+    // before the token expires (or hold a dead cookie longer than the token).
+    // Previously these were hardcoded to 15min / 7d, which logged users out
+    // 15 minutes after login regardless of the rememberMe flag. Now we read
+    // the actual TTL from `meta` (seconds, set by users.service.generateUserResponse)
+    // and convert to milliseconds for express's cookie API.
+    const meta = (response as any)?.meta ?? {};
+    const accessSeconds = Number(meta.accessTokenExpiresIn) > 0
+      ? Number(meta.accessTokenExpiresIn)
+      : 60 * 60 * 8; // 8h fallback
+    const refreshSeconds = Number(meta.refreshTokenExpiresIn) > 0
+      ? Number(meta.refreshTokenExpiresIn)
+      : 60 * 60 * 24 * 7; // 7d fallback
+
     res.cookie('access_token', response.user.token, {
       httpOnly: true,
       sameSite: 'lax',
       secure: false,
       path: '/',
-      maxAge: 15 * 60 * 1000,
+      maxAge: accessSeconds * 1000,
     });
 
     res.cookie('refresh_token', (response.user as any).refreshToken, {
@@ -190,7 +204,7 @@ export class AuthController {
       sameSite: 'lax',
       secure: false,
       path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: refreshSeconds * 1000,
     });
   }
 }
