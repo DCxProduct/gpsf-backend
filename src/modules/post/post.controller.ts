@@ -53,6 +53,7 @@ export class PostController {
     @Query('workingGroupIds') workingGroupIds?: string,
     @Query('hasWorkingGroup') hasWorkingGroup?: string,
     @Query('hasDocument') hasDocument?: string,
+    @Query('excludeTemplateSections') excludeTemplateSections?: string,
   ) {
     const current = Math.max(Number(page) || 1, 1);
     const size = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
@@ -63,6 +64,7 @@ export class PostController {
     const workingGroupFilter = this.parsePositiveIntListQuery(workingGroupIds, 'workingGroupIds');
     const hasWorkingGroupFilter = this.parseBooleanQuery(hasWorkingGroup, 'hasWorkingGroup');
     const hasDocumentFilter = this.parseBooleanQuery(hasDocument, 'hasDocument');
+    const excludeTemplateFilter = this.parseBooleanQuery(excludeTemplateSections, 'excludeTemplateSections');
     const { items, total } = await this.postService.findAll(
       current,
       size,
@@ -75,6 +77,7 @@ export class PostController {
       workingGroupFilter,
       hasWorkingGroupFilter,
       hasDocumentFilter,
+      excludeTemplateFilter,
     );
     const data = items.map((post) => this.toPostResponse(post));
     return {

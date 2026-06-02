@@ -188,6 +188,7 @@ export class PostService {
         workingGroupIds?: number[],
         hasWorkingGroup?: boolean,
         hasDocument?: boolean,
+        excludeTemplateSections?: boolean,
     ): Promise<{ items: PostEntity[]; total: number }> {
         const take = Math.min(Math.max(Number(pageSize) || 20, 1), 50);
         const current = Math.max(Number(page) || 1, 1);
@@ -273,6 +274,23 @@ export class PostService {
                     (post.documents -> 'en' ->> 'url') IS NULL
                     AND (post.documents -> 'km' ->> 'url') IS NULL
                 )`,
+            );
+        }
+
+        if (excludeTemplateSections === true) {
+            // Posts attached to "structural" sections (wg_template, hero_banner,
+            // co-chairs, stats, text_block, annual_reports, issues_responses,
+            // default_template, benefits) are page-template content, not news.
+            // News-style block types (post_list, announcement) and posts with
+            // no section attachment do pass through.
+            qb.andWhere(
+                new Brackets((subQuery) => {
+                    subQuery
+                        .where('post.sectionId IS NULL')
+                        .orWhere(
+                            `section.blockType IN ('post_list', 'announcement')`,
+                        );
+                }),
             );
         }
 
