@@ -68,7 +68,9 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<IUserResponse> {
     const user = await this.authService.login(dto);
-    const response = await this.usersService.generateUserResponse(user);
+    const response = await this.usersService.generateUserResponse(user, {
+      rememberMe: dto.rememberMe === true,
+    });
 
     this.attachAuthCookies(res, response);
     // Login logs are useful for the activity table and basic audit history.

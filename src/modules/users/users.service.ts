@@ -17,6 +17,40 @@ import { CreateRoleDto } from '../roles/dto/role.dto';
 import { Role } from '@/modules/auth/enums/role.enum';
 import { SYSTEM_SUPER_ADMIN } from './constants/system-users';
 
+/**
+ * Parse a jsonwebtoken-style duration string ("8h", "7d", "30m", "120", "60s")
+ * into seconds. Used so the cookie maxAge on the dashboard matches whatever
+ * TTL we configured via env. Falls back to `fallbackSeconds` on bad input.
+ */
+function durationToSeconds(value: string, fallbackSeconds: number): number {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return fallbackSeconds;
+  // Pure number → seconds (matches jsonwebtoken behavior).
+  const asNumber = Number(raw);
+  if (Number.isFinite(asNumber) && asNumber > 0) return Math.floor(asNumber);
+
+  const match = /^(\d+)\s*(ms|s|m|h|d|w|y)$/i.exec(raw);
+  if (!match) return fallbackSeconds;
+  const n = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const SECOND = 1;
+  const MINUTE = 60;
+  const HOUR = 60 * 60;
+  const DAY = 60 * 60 * 24;
+  const WEEK = DAY * 7;
+  const YEAR = DAY * 365;
+  switch (unit) {
+    case 'ms': return Math.max(1, Math.floor(n / 1000));
+    case 's': return n * SECOND;
+    case 'm': return n * MINUTE;
+    case 'h': return n * HOUR;
+    case 'd': return n * DAY;
+    case 'w': return n * WEEK;
+    case 'y': return n * YEAR;
+    default: return fallbackSeconds;
+  }
+}
+
 @Injectable()
 export class UsersService implements OnApplicationBootstrap {
   constructor(
@@ -163,10 +197,22 @@ export class UsersService implements OnApplicationBootstrap {
     return await this.userRepository.save(user);
   }
 
-  async generateUserResponse(user: UserEntity): Promise<IUserResponse> {
+  async generateUserResponse(
+    user: UserEntity,
+    options?: { rememberMe?: boolean },
+  ): Promise<IUserResponse> {
     const permissions = user.role
       ? await this.roleService.getPermissionMapForRole(user.role)
       : {};
+
+    // Token TTLs come from env so ops can tune without a code change.
+    // Defaults: 8h regular session, 7d when remember-me is on (same as refresh
+    // token so both cookies expire together in that mode).
+    const rememberMe = options?.rememberMe === true;
+    const accessTtl = rememberMe
+      ? process.env.JWT_ACCESS_REMEMBER_ME_EXPIRES_IN || '7d'
+      : process.env.JWT_ACCESS_EXPIRES_IN || '8h';
+    const refreshTtl = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
     // embed current role + permissions so frontend can pre-fill checkboxes
     return {
@@ -179,8 +225,13 @@ export class UsersService implements OnApplicationBootstrap {
         role: user.role,
         lastLogin: user.lastLogin,
         permissions,
-        token: this.generateAccessToken(user),
-        refreshToken: this.generateRefreshToken(user),
+        token: this.generateAccessToken(user, accessTtl),
+        refreshToken: this.generateRefreshToken(user, refreshTtl),
+      },
+      meta: {
+        accessTokenExpiresIn: durationToSeconds(accessTtl, 60 * 60 * 8),
+        refreshTokenExpiresIn: durationToSeconds(refreshTtl, 60 * 60 * 24 * 7),
+        rememberMe,
       },
     };
   }
@@ -229,7 +280,7 @@ export class UsersService implements OnApplicationBootstrap {
     }
   }
 
-  private generateAccessToken(user: UserEntity): string {
+  private generateAccessToken(user: UserEntity, expiresIn: string = '8h'): string {
     return sign(
       {
         id: user.id,
@@ -239,11 +290,11 @@ export class UsersService implements OnApplicationBootstrap {
         type: 'access',
       },
       process.env.JWT_SECRET as string,
-      { expiresIn: '15m' },
+      { expiresIn } as any,
     );
   }
 
-  private generateRefreshToken(user: UserEntity): string {
+  private generateRefreshToken(user: UserEntity, expiresIn: string = '7d'): string {
     const secret = (process.env.JWT_REFRESH_SECRET as string) || (process.env.JWT_SECRET as string);
 
     return sign(
@@ -255,7 +306,7 @@ export class UsersService implements OnApplicationBootstrap {
         type: 'refresh',
       },
       secret,
-      { expiresIn: '7d' },
+      { expiresIn } as any,
     );
   }
 
